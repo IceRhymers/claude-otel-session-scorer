@@ -1,0 +1,33 @@
+bundle:
+  name: "claude_otel_session_scorer"
+
+artifacts:
+  claude_otel_session_scorer:
+    type: whl
+    build: poetry build
+    path: .
+
+resources:
+  jobs:
+    claude_otel_session_scorer_job:
+      name: "Claude OTEL Session Scorer Job"
+      tasks:
+        - task_key: "main_task"
+          python_wheel_task:
+            package_name: "claude_otel_session_scorer"
+            entry_point: "main"
+            named_parameters:
+              table-name: "your_catalog.your_schema.your_table"
+          environment_key: Default
+      queue:
+        enabled: true
+      environments:
+        - environment_key: Default
+          spec:
+            client: "5"
+            dependencies:
+              - ./dist/*.whl
+
+targets:
+  dev:
+    default: true
