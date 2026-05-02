@@ -23,6 +23,11 @@ def _safe_event_attr(attr_key: str):
     return F.when(F.size(F.col("events")) > 0, F.col("events")[0]["attributes"].getItem(attr_key))
 
 
+def _ensure_table_with_clustering(spark: SparkSession, full_table_name: str, df: DataFrame) -> None:
+    if not spark.catalog.tableExists(full_table_name):
+        df.limit(0).write.format("delta").option("clusterByAuto", "true").saveAsTable(full_table_name)
+
+
 def _build_session_summary(
     spark: SparkSession, bronze_traces: str, bronze_metrics: str
 ) -> DataFrame:
@@ -481,10 +486,8 @@ def run_silver_etl(
 
     # session_summary — MERGE
     summary_df = _build_session_summary(spark, bronze_traces, bronze_metrics)
+    _ensure_table_with_clustering(spark, silver_summary, summary_df)
     summary_df.createOrReplaceTempView("session_summary_updates")
-    spark.sql(
-        f"CREATE TABLE IF NOT EXISTS {silver_summary} AS SELECT * FROM session_summary_updates WHERE 1=0"
-    )
     spark.sql(f"""
         MERGE INTO {silver_summary} AS target
         USING session_summary_updates AS source
@@ -496,10 +499,8 @@ def run_silver_etl(
 
     # session_events — delete-then-append per session
     events_df = _build_session_events(spark, bronze_traces, bronze_logs)
+    _ensure_table_with_clustering(spark, silver_events, events_df)
     events_df.createOrReplaceTempView("session_events_updates")
-    spark.sql(
-        f"CREATE TABLE IF NOT EXISTS {silver_events} AS SELECT * FROM session_events_updates WHERE 1=0"
-    )
     events_df.select("session_id").distinct().createOrReplaceTempView("incoming_session_ids")
     spark.sql(
         f"DELETE FROM {silver_events} WHERE session_id IN (SELECT session_id FROM incoming_session_ids)"
@@ -509,10 +510,8 @@ def run_silver_etl(
 
     # session_metrics — MERGE
     metrics_df = _build_session_metrics(spark, bronze_metrics)
+    _ensure_table_with_clustering(spark, silver_metrics, metrics_df)
     metrics_df.createOrReplaceTempView("session_metrics_updates")
-    spark.sql(
-        f"CREATE TABLE IF NOT EXISTS {silver_metrics} AS SELECT * FROM session_metrics_updates WHERE 1=0"
-    )
     spark.sql(f"""
         MERGE INTO {silver_metrics} AS target
         USING session_metrics_updates AS source
