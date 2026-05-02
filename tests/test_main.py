@@ -4,7 +4,7 @@ Tests for the main module
 import pytest
 from unittest.mock import patch, MagicMock
 
-from claude_otel_session_scorer.main import scan_table, create_spark_session
+from claude_otel_session_scorer.main import scan_table
 
 
 @pytest.fixture
