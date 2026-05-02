@@ -12,6 +12,7 @@ databricks-connect = "==18.0.5"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0.0"
+ruff = ">=0.4"
 
 [build-system]
 requires = ["poetry-core"]
@@ -19,3 +20,12 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 claude_otel_session_scorer = "claude_otel_session_scorer.main:main"
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
