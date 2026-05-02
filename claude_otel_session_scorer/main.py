@@ -7,6 +7,7 @@ def create_spark_session() -> SparkSession:
     if os.environ.get("DATABRICKS_RUNTIME_VERSION") is None:
         try:
             from databricks.connect import DatabricksSession
+
             return DatabricksSession.builder.serverless().getOrCreate()
         except ImportError:
             print("Databricks Connect not available. Falling back to standard Spark session.")
@@ -21,7 +22,9 @@ def scan_table(spark: SparkSession, table_name: str, limit: int = 10) -> DataFra
 
 
 def main() -> None:
-    parser = ArgumentParser(description="A series of data pipelines for Databricks to score claude code sessions collected from Open Telemetry")
+    parser = ArgumentParser(
+        description="A series of data pipelines for Databricks to score claude code sessions collected from Open Telemetry"
+    )
     parser.add_argument("--table-name", "-t", type=str, help="Name of the table to scan")
     args = parser.parse_args()
 
