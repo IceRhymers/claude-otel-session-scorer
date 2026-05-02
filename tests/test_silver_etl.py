@@ -40,9 +40,7 @@ def test_session_events_delete_then_append():
     # check that .write.mode("append").saveAsTable(...) was called on it.
     run_silver_etl(spark, "cat", "src", "cat", "tgt")
 
-    delete_calls = [
-        s for s in _sql_calls(spark) if "DELETE FROM cat.tgt.session_events" in s
-    ]
+    delete_calls = [s for s in _sql_calls(spark) if "DELETE FROM cat.tgt.session_events" in s]
     assert len(delete_calls) == 1
 
     # Verify saveAsTable was invoked with the silver events table name somewhere
@@ -64,11 +62,10 @@ def test_session_metrics_merge():
 
 
 def test_main_creates_spark_and_stops():
-    with patch(
-        "claude_otel_session_scorer.silver_etl.create_spark_session"
-    ) as mock_create, patch(
-        "claude_otel_session_scorer.silver_etl.run_silver_etl"
-    ) as mock_run:
+    with (
+        patch("claude_otel_session_scorer.silver_etl.create_spark_session") as mock_create,
+        patch("claude_otel_session_scorer.silver_etl.run_silver_etl") as mock_run,
+    ):
         mock_spark = MagicMock()
         mock_create.return_value = mock_spark
 
@@ -76,10 +73,14 @@ def test_main_creates_spark_and_stops():
             "sys.argv",
             [
                 "silver_etl",
-                "--source-catalog", "sc",
-                "--source-schema", "ss",
-                "--target-catalog", "tc",
-                "--target-schema", "ts",
+                "--source-catalog",
+                "sc",
+                "--source-schema",
+                "ss",
+                "--target-catalog",
+                "tc",
+                "--target-schema",
+                "ts",
             ],
         ):
             main()
