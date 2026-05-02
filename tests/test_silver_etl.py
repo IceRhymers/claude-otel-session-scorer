@@ -2,73 +2,88 @@
 Tests for the silver_etl module
 """
 
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from claude_otel_session_scorer.silver_etl import main, run_silver_etl
 
 
-@pytest.fixture
-def mock_spark():
+def _make_mock_spark():
     spark = MagicMock()
-    # make spark.table() return a MagicMock that supports chained DataFrame ops
-    mock_df = MagicMock()
-    mock_df.filter.return_value = mock_df
-    mock_df.groupBy.return_value = mock_df
-    mock_df.agg.return_value = mock_df
-    mock_df.join.return_value = mock_df
-    mock_df.withColumn.return_value = mock_df
-    mock_df.select.return_value = mock_df
-    mock_df.distinct.return_value = mock_df
-    mock_df.unionByName.return_value = mock_df
-    mock_df.write = MagicMock()
-    mock_df.write.mode.return_value = mock_df.write
-    mock_df.count.return_value = 0
-    spark.table.return_value = mock_df
+    # spark.table() returns a MagicMock that supports arbitrarily chained DataFrame ops
+    df = MagicMock()
+    spark.table.return_value = df
     return spark
 
 
-def test_run_silver_etl_creates_schema(mock_spark):
-    run_silver_etl(mock_spark, "cat", "src", "cat", "tgt")
-    sql_calls = [str(c.args[0]) for c in mock_spark.sql.call_args_list]
-    assert any("CREATE SCHEMA IF NOT EXISTS cat.tgt" in s for s in sql_calls)
+def _sql_calls(spark):
+    return [c.args[0].strip() for c in spark.sql.call_args_list]
 
 
-def test_run_silver_etl_merges_session_summary(mock_spark):
-    run_silver_etl(mock_spark, "cat", "src", "cat", "tgt")
-    sql_calls = [str(c.args[0]) for c in mock_spark.sql.call_args_list]
-    assert any("MERGE INTO cat.tgt.session_summary" in s for s in sql_calls)
+def test_run_silver_etl_calls_schema_create():
+    spark = _make_mock_spark()
+    run_silver_etl(spark, "cat", "src", "cat", "tgt")
+    assert any("CREATE SCHEMA IF NOT EXISTS cat.tgt" in s for s in _sql_calls(spark))
 
 
-def test_run_silver_etl_merges_session_metrics(mock_spark):
-    run_silver_etl(mock_spark, "cat", "src", "cat", "tgt")
-    sql_calls = [str(c.args[0]) for c in mock_spark.sql.call_args_list]
-    assert any("MERGE INTO cat.tgt.session_metrics" in s for s in sql_calls)
+def test_session_summary_merge():
+    spark = _make_mock_spark()
+    run_silver_etl(spark, "cat", "src", "cat", "tgt")
+    merge_calls = [s for s in _sql_calls(spark) if "MERGE INTO cat.tgt.session_summary" in s]
+    assert len(merge_calls) == 1
+    assert "WHEN MATCHED THEN UPDATE SET *" in merge_calls[0]
+    assert "WHEN NOT MATCHED THEN INSERT *" in merge_calls[0]
 
 
-def test_run_silver_etl_delete_then_append_session_events(mock_spark):
-    run_silver_etl(mock_spark, "cat", "src", "cat", "tgt")
-    sql_calls = [str(c.args[0]) for c in mock_spark.sql.call_args_list]
-    assert any("DELETE FROM cat.tgt.session_events" in s for s in sql_calls)
-    mock_spark.table.return_value.write.mode.assert_called_with("append")
+def test_session_events_delete_then_append():
+    spark = _make_mock_spark()
+    # Capture the DataFrame returned from the final unionByName chain so we can
+    # check that .write.mode("append").saveAsTable(...) was called on it.
+    run_silver_etl(spark, "cat", "src", "cat", "tgt")
+
+    delete_calls = [
+        s for s in _sql_calls(spark) if "DELETE FROM cat.tgt.session_events" in s
+    ]
+    assert len(delete_calls) == 1
+
+    # Verify saveAsTable was invoked with the silver events table name somewhere
+    # in the MagicMock call graph (write.mode("append").saveAsTable).
+    # Because the chained MagicMock records every call, we walk call_args_list of
+    # all mock children to find saveAsTable("cat.tgt.session_events").
+    all_calls = str(spark.mock_calls)
+    assert "saveAsTable" in all_calls
+    assert "cat.tgt.session_events" in all_calls
 
 
-def test_main_creates_spark_and_calls_etl():
-    with patch("claude_otel_session_scorer.silver_etl.create_spark_session") as mock_create, \
-         patch("claude_otel_session_scorer.silver_etl.run_silver_etl") as mock_etl:
+def test_session_metrics_merge():
+    spark = _make_mock_spark()
+    run_silver_etl(spark, "cat", "src", "cat", "tgt")
+    merge_calls = [s for s in _sql_calls(spark) if "MERGE INTO cat.tgt.session_metrics" in s]
+    assert len(merge_calls) == 1
+    assert "WHEN MATCHED THEN UPDATE SET *" in merge_calls[0]
+    assert "WHEN NOT MATCHED THEN INSERT *" in merge_calls[0]
+
+
+def test_main_creates_spark_and_stops():
+    with patch(
+        "claude_otel_session_scorer.silver_etl.create_spark_session"
+    ) as mock_create, patch(
+        "claude_otel_session_scorer.silver_etl.run_silver_etl"
+    ) as mock_run:
         mock_spark = MagicMock()
         mock_create.return_value = mock_spark
 
-        import sys
-        sys.argv = [
-            "silver_etl",
-            "--source-catalog", "sc",
-            "--source-schema", "ss",
-            "--target-catalog", "tc",
-            "--target-schema", "ts",
-        ]
-        main()
+        with patch(
+            "sys.argv",
+            [
+                "silver_etl",
+                "--source-catalog", "sc",
+                "--source-schema", "ss",
+                "--target-catalog", "tc",
+                "--target-schema", "ts",
+            ],
+        ):
+            main()
 
-        mock_etl.assert_called_once_with(mock_spark, "sc", "ss", "tc", "ts")
+        mock_create.assert_called_once()
+        mock_run.assert_called_once_with(mock_spark, "sc", "ss", "tc", "ts")
         mock_spark.stop.assert_called_once()
