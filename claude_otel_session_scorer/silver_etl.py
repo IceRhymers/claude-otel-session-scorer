@@ -23,7 +23,9 @@ def _safe_event_attr(attr_key: str):
     return F.when(F.size(F.col("events")) > 0, F.col("events")[0]["attributes"].getItem(attr_key))
 
 
-def _build_session_summary(spark: SparkSession, bronze_traces: str, bronze_metrics: str) -> DataFrame:
+def _build_session_summary(
+    spark: SparkSession, bronze_traces: str, bronze_metrics: str
+) -> DataFrame:
     traces = spark.table(bronze_traces)
     metrics = spark.table(bronze_metrics)
 
@@ -35,8 +37,12 @@ def _build_session_summary(spark: SparkSession, bronze_traces: str, bronze_metri
             F.count("*").alias("num_interactions"),
             F.min((F.col("start_time_unix_nano") / 1e9).cast("timestamp")).alias("session_start"),
             F.max((F.col("end_time_unix_nano") / 1e9).cast("timestamp")).alias("session_end"),
-            F.avg(F.col("attributes").getItem("user_prompt_length").cast("int")).alias("avg_prompt_length"),
-            F.first(F.col("resource.attributes").getItem("service.version")).alias("service_version"),
+            F.avg(F.col("attributes").getItem("user_prompt_length").cast("int")).alias(
+                "avg_prompt_length"
+            ),
+            F.first(F.col("resource.attributes").getItem("service.version")).alias(
+                "service_version"
+            ),
             F.first(F.col("resource.attributes").getItem("os.type")).alias("os_type"),
             F.first(F.col("attributes").getItem("terminal.type")).alias("terminal_type"),
         )
@@ -46,12 +52,22 @@ def _build_session_summary(spark: SparkSession, bronze_traces: str, bronze_metri
         .groupBy(F.col("attributes").getItem("session.id").alias("session_id"))
         .agg(
             F.count("*").alias("num_llm_requests"),
-            F.sum(F.col("attributes").getItem("input_tokens").cast("long")).alias("total_input_tokens"),
-            F.sum(F.col("attributes").getItem("output_tokens").cast("long")).alias("total_output_tokens"),
-            F.sum(F.col("attributes").getItem("cache_read_tokens").cast("long")).alias("total_cache_read"),
-            F.sum(F.col("attributes").getItem("cache_creation_tokens").cast("long")).alias("total_cache_creation"),
+            F.sum(F.col("attributes").getItem("input_tokens").cast("long")).alias(
+                "total_input_tokens"
+            ),
+            F.sum(F.col("attributes").getItem("output_tokens").cast("long")).alias(
+                "total_output_tokens"
+            ),
+            F.sum(F.col("attributes").getItem("cache_read_tokens").cast("long")).alias(
+                "total_cache_read"
+            ),
+            F.sum(F.col("attributes").getItem("cache_creation_tokens").cast("long")).alias(
+                "total_cache_creation"
+            ),
             F.avg(F.col("attributes").getItem("ttft_ms").cast("double")).alias("avg_ttft_ms"),
-            F.avg(F.col("attributes").getItem("duration_ms").cast("double")).alias("avg_llm_duration_ms"),
+            F.avg(F.col("attributes").getItem("duration_ms").cast("double")).alias(
+                "avg_llm_duration_ms"
+            ),
         )
     )
     tool_stats = (
@@ -67,9 +83,9 @@ def _build_session_summary(spark: SparkSession, bronze_traces: str, bronze_metri
         .groupBy(F.col("attributes").getItem("session.id").alias("session_id"))
         .agg(
             F.count("*").alias("num_tool_executions"),
-            F.sum(
-                F.when(F.col("attributes").getItem("success") == "true", 1).otherwise(0)
-            ).alias("tool_successes"),
+            F.sum(F.when(F.col("attributes").getItem("success") == "true", 1).otherwise(0)).alias(
+                "tool_successes"
+            ),
         )
     )
     autonomy = (
@@ -144,14 +160,31 @@ def _build_session_summary(spark: SparkSession, bronze_traces: str, bronze_metri
             ),
         )
         .select(
-            "session_id", "user_id", "session_start", "session_end", "session_duration_s",
-            "num_interactions", "num_llm_requests", "num_tool_calls",
-            "total_input_tokens", "total_output_tokens", "total_cache_read", "total_cache_creation",
-            "cache_hit_rate", "avg_ttft_ms", "avg_llm_duration_ms",
-            "tool_success_rate", "auto_accept_rate",
-            "tools_per_interaction", "llm_calls_per_interaction", "avg_prompt_length",
-            "total_cost_usd", "total_active_time_s",
-            "service_version", "os_type", "terminal_type",
+            "session_id",
+            "user_id",
+            "session_start",
+            "session_end",
+            "session_duration_s",
+            "num_interactions",
+            "num_llm_requests",
+            "num_tool_calls",
+            "total_input_tokens",
+            "total_output_tokens",
+            "total_cache_read",
+            "total_cache_creation",
+            "cache_hit_rate",
+            "avg_ttft_ms",
+            "avg_llm_duration_ms",
+            "tool_success_rate",
+            "auto_accept_rate",
+            "tools_per_interaction",
+            "llm_calls_per_interaction",
+            "avg_prompt_length",
+            "total_cost_usd",
+            "total_active_time_s",
+            "service_version",
+            "os_type",
+            "terminal_type",
         )
     )
 
@@ -350,16 +383,24 @@ def _build_session_metrics(spark: SparkSession, bronze_metrics: str) -> DataFram
         .groupBy(F.col("sum.attributes").getItem("session.id").alias("session_id"))
         .agg(
             F.sum(
-                F.when(F.col("sum.attributes").getItem("type") == "input", F.col("sum.value")).otherwise(0)
+                F.when(
+                    F.col("sum.attributes").getItem("type") == "input", F.col("sum.value")
+                ).otherwise(0)
             ).alias("input_tokens"),
             F.sum(
-                F.when(F.col("sum.attributes").getItem("type") == "output", F.col("sum.value")).otherwise(0)
+                F.when(
+                    F.col("sum.attributes").getItem("type") == "output", F.col("sum.value")
+                ).otherwise(0)
             ).alias("output_tokens"),
             F.sum(
-                F.when(F.col("sum.attributes").getItem("type") == "cacheRead", F.col("sum.value")).otherwise(0)
+                F.when(
+                    F.col("sum.attributes").getItem("type") == "cacheRead", F.col("sum.value")
+                ).otherwise(0)
             ).alias("cache_read_tokens"),
             F.sum(
-                F.when(F.col("sum.attributes").getItem("type") == "cacheCreation", F.col("sum.value")).otherwise(0)
+                F.when(
+                    F.col("sum.attributes").getItem("type") == "cacheCreation", F.col("sum.value")
+                ).otherwise(0)
             ).alias("cache_creation_tokens"),
         )
     )
@@ -368,10 +409,14 @@ def _build_session_metrics(spark: SparkSession, bronze_metrics: str) -> DataFram
         .groupBy(F.col("sum.attributes").getItem("session.id").alias("session_id"))
         .agg(
             F.sum(
-                F.when(F.col("sum.attributes").getItem("type") == "cli", F.col("sum.value")).otherwise(0)
+                F.when(
+                    F.col("sum.attributes").getItem("type") == "cli", F.col("sum.value")
+                ).otherwise(0)
             ).alias("active_time_cli_s"),
             F.sum(
-                F.when(F.col("sum.attributes").getItem("type") == "user", F.col("sum.value")).otherwise(0)
+                F.when(
+                    F.col("sum.attributes").getItem("type") == "user", F.col("sum.value")
+                ).otherwise(0)
             ).alias("active_time_user_s"),
         )
     )
@@ -404,10 +449,16 @@ def _build_session_metrics(spark: SparkSession, bronze_metrics: str) -> DataFram
         .join(active_df, "session_id", "outer")
         .join(model_effort, "session_id", "left")
         .select(
-            "session_id", "total_cost_usd",
-            "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens",
-            "active_time_cli_s", "active_time_user_s",
-            "primary_model", "effort_level",
+            "session_id",
+            "total_cost_usd",
+            "input_tokens",
+            "output_tokens",
+            "cache_read_tokens",
+            "cache_creation_tokens",
+            "active_time_cli_s",
+            "active_time_user_s",
+            "primary_model",
+            "effort_level",
         )
     )
 
@@ -473,7 +524,9 @@ def run_silver_etl(
 
 
 def main() -> None:
-    parser = ArgumentParser(description="Silver ETL: transform bronze OTEL tables into silver session tables")
+    parser = ArgumentParser(
+        description="Silver ETL: transform bronze OTEL tables into silver session tables"
+    )
     parser.add_argument("--source-catalog", "-sc", required=True)
     parser.add_argument("--source-schema", "-ss", required=True)
     parser.add_argument("--target-catalog", "-tc", required=True)
@@ -482,7 +535,9 @@ def main() -> None:
 
     spark = create_spark_session()
     try:
-        run_silver_etl(spark, args.source_catalog, args.source_schema, args.target_catalog, args.target_schema)
+        run_silver_etl(
+            spark, args.source_catalog, args.source_schema, args.target_catalog, args.target_schema
+        )
     finally:
         spark.stop()
 
