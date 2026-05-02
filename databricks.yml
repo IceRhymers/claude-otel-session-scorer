@@ -28,6 +28,28 @@ resources:
             dependencies:
               - ./dist/*.whl
 
+    silver_etl_job:
+      name: "Claude OTEL Silver ETL Job"
+      tasks:
+        - task_key: "silver_etl_task"
+          python_wheel_task:
+            package_name: "claude_otel_session_scorer"
+            entry_point: "silver_etl"
+            named_parameters:
+              source-catalog: "your_catalog"
+              source-schema: "claude"
+              target-catalog: "your_catalog"
+              target-schema: "claude_silver"
+          environment_key: Default
+      queue:
+        enabled: true
+      environments:
+        - environment_key: Default
+          spec:
+            client: "5"
+            dependencies:
+              - ./dist/*.whl
+
 targets:
   dev:
     default: true

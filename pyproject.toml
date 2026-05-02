@@ -20,6 +20,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 claude_otel_session_scorer = "claude_otel_session_scorer.main:main"
+silver_etl = "claude_otel_session_scorer.silver_etl:main"
 
 [tool.ruff]
 line-length = 100
