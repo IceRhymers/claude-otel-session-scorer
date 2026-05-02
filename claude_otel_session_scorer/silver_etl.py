@@ -25,7 +25,9 @@ def _safe_event_attr(attr_key: str):
 
 def _ensure_table_with_clustering(spark: SparkSession, full_table_name: str, df: DataFrame) -> None:
     if not spark.catalog.tableExists(full_table_name):
-        df.limit(0).write.format("delta").option("clusterByAuto", "true").saveAsTable(full_table_name)
+        df.limit(0).write.format("delta").option("clusterByAuto", "true").saveAsTable(
+            full_table_name
+        )
 
 
 def _build_session_summary(
