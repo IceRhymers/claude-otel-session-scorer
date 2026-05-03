@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from argparse import ArgumentParser
 from datetime import datetime, timezone
 
@@ -12,8 +13,8 @@ from pyspark.sql.types import IntegerType, StringType, StructField, StructType
 
 logger = logging.getLogger(__name__)
 
-REPLAY_CHAR_BUDGET = 30_000
-KEEP_INTERACTIONS = 2
+_REPLAY_CHAR_BUDGET = 30_000
+_KEEP_INTERACTIONS = 2
 
 RESPONSE_FORMAT = (
     '{"type":"json_object","schema":{"type":"object","properties":{"judgment":{"type":"object",'
@@ -46,7 +47,14 @@ JUDGMENT_SCHEMA = StructType(
 
 def create_spark_session() -> SparkSession:
     """Return (or reuse) the active SparkSession for this job."""
-    return SparkSession.builder.appName("claude_otel_score_sessions").getOrCreate()
+    if os.environ.get("DATABRICKS_RUNTIME_VERSION") is None:
+        try:
+            from databricks.connect import DatabricksSession
+
+            return DatabricksSession.builder.serverless().getOrCreate()
+        except ImportError:
+            return SparkSession.builder.getOrCreate()
+    return SparkSession.builder.getOrCreate()
 
 
 def format_event_line(row) -> str:
@@ -88,15 +96,19 @@ def compress_interaction(events: list) -> str:
     return f"--- [compressed: {len(events)} events, types: {type_str}, cost=${total_cost:.4f}, duration={total_ms}ms] ---"
 
 
-def build_replay_text(rows: list) -> str:
+def build_replay_text(
+    rows: list,
+    replay_char_budget: int = _REPLAY_CHAR_BUDGET,
+    keep_interactions: int = _KEEP_INTERACTIONS,
+) -> str:
     """Build the session replay string, keeping head/tail verbatim and compressing the middle."""
     interactions = split_into_interactions(rows)
-    if len(interactions) <= KEEP_INTERACTIONS * 2:
+    if len(interactions) <= keep_interactions * 2:
         text = "\n".join(format_event_line(r) for r in rows)
     else:
-        keep_head = interactions[:KEEP_INTERACTIONS]
-        keep_tail = interactions[-KEEP_INTERACTIONS:]
-        middle = interactions[KEEP_INTERACTIONS:-KEEP_INTERACTIONS]
+        keep_head = interactions[:keep_interactions]
+        keep_tail = interactions[-keep_interactions:]
+        middle = interactions[keep_interactions:-keep_interactions]
         parts: list[str] = []
         for chunk in keep_head:
             parts.extend(format_event_line(r) for r in chunk)
@@ -105,7 +117,7 @@ def build_replay_text(rows: list) -> str:
         for chunk in keep_tail:
             parts.extend(format_event_line(r) for r in chunk)
         text = "\n".join(parts)
-    return text[:REPLAY_CHAR_BUDGET]
+    return text[:replay_char_budget]
 
 
 @F.udf(StringType())
@@ -151,7 +163,12 @@ def _build_prompt_udf(
 
 
 def run_scoring(
-    spark: SparkSession, target_catalog: str, target_schema: str, gold_schema: str
+    spark: SparkSession,
+    target_catalog: str,
+    target_schema: str,
+    gold_schema: str,
+    replay_char_budget: int = _REPLAY_CHAR_BUDGET,
+    keep_interactions: int = _KEEP_INTERACTIONS,
 ) -> None:
     """Run the full incremental scoring pipeline: discover → replay → score → judge → merge."""
     silver_summary = f"{target_catalog}.{target_schema}.session_summary"
@@ -297,7 +314,8 @@ def run_scoring(
             f"ai_query('databricks-claude-sonnet-4', full_prompt, responseFormat => '{RESPONSE_FORMAT}')"
         ),
     ).withColumn(
-        "judgment", F.from_json(F.col("ai_response"), JUDGMENT_SCHEMA).getField("judgment")
+        "judgment",
+        F.from_json(F.col("ai_response"), JUDGMENT_SCHEMA).getField("judgment"),
     )
 
     gold_df = ai_result.select(
@@ -347,6 +365,7 @@ def run_scoring(
             llm_recommendations STRING,
             scored_at TIMESTAMP
         ) USING DELTA
+        CLUSTER BY AUTO
         """
     )
 
@@ -369,7 +388,9 @@ def main() -> None:
     parser.add_argument("--target-catalog", required=True)
     parser.add_argument("--target-schema", required=True)
     parser.add_argument(
-        "--gold-schema", required=True, help="Full catalog.schema, e.g. prod.claude_gold"
+        "--gold-schema",
+        required=True,
+        help="Full catalog.schema, e.g. prod.claude_gold",
     )
     args = parser.parse_args()
     spark = create_spark_session()
