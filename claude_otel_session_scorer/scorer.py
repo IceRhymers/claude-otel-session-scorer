@@ -45,10 +45,12 @@ JUDGMENT_SCHEMA = StructType(
 
 
 def create_spark_session() -> SparkSession:
+    """Return (or reuse) the active SparkSession for this job."""
     return SparkSession.builder.appName("claude_otel_score_sessions").getOrCreate()
 
 
 def format_event_line(row) -> str:
+    """Render a single session event as a human-readable line for the LLM replay."""
     ts = getattr(row, "event_ts", "")
     etype = getattr(row, "event_type", "")
     name = getattr(row, "detail_name", "")
@@ -62,6 +64,7 @@ def format_event_line(row) -> str:
 
 
 def split_into_interactions(rows: list) -> list[list]:
+    """Partition events into interactions, splitting at each USER_PROMPT boundary."""
     interactions: list[list] = []
     current: list = []
     for row in rows:
@@ -75,6 +78,7 @@ def split_into_interactions(rows: list) -> list[list]:
 
 
 def compress_interaction(events: list) -> str:
+    """Summarise a middle interaction as a single compressed line to save replay budget."""
     from collections import Counter
 
     counts = Counter(getattr(r, "event_type", "UNKNOWN") for r in events)
@@ -85,6 +89,7 @@ def compress_interaction(events: list) -> str:
 
 
 def build_replay_text(rows: list) -> str:
+    """Build the session replay string, keeping head/tail verbatim and compressing the middle."""
     interactions = split_into_interactions(rows)
     if len(interactions) <= KEEP_INTERACTIONS * 2:
         text = "\n".join(format_event_line(r) for r in rows)
@@ -105,6 +110,7 @@ def build_replay_text(rows: list) -> str:
 
 @F.udf(StringType())
 def _build_replay_udf(rows):
+    """Spark UDF wrapper — collect_list rows → replay text for each session."""
     return build_replay_text(rows or [])
 
 
@@ -117,6 +123,7 @@ def _build_prompt_udf(
     tool_success_rate,
     auto_accept_rate,
 ):
+    """Spark UDF that renders the LLM judge prompt from session metrics and replay text."""
     replay = replay_text or "(no events)"
     cost = total_cost_usd or 0.0
     chr_rate = f"{(cache_hit_rate or 0):.2%}"
@@ -146,6 +153,7 @@ def _build_prompt_udf(
 def run_scoring(
     spark: SparkSession, target_catalog: str, target_schema: str, gold_schema: str
 ) -> None:
+    """Run the full incremental scoring pipeline: discover → replay → score → judge → merge."""
     silver_summary = f"{target_catalog}.{target_schema}.session_summary"
     silver_events = f"{target_catalog}.{target_schema}.session_events"
     gold_scores = f"{gold_schema}.session_scores"
@@ -356,6 +364,7 @@ def run_scoring(
 
 
 def main() -> None:
+    """Entry point: parse args, create Spark session, run scoring, stop Spark."""
     parser = ArgumentParser(description="Score Claude Code sessions using LLM-as-judge")
     parser.add_argument("--target-catalog", required=True)
     parser.add_argument("--target-schema", required=True)
