@@ -235,9 +235,7 @@ def run_scoring(
 
     scored_df = (
         silver_df.join(visible_errors, "session_id", "left")
-        .withColumn(
-            "visible_error_count", F.coalesce(F.col("visible_error_count"), F.lit(0))
-        )
+        .withColumn("visible_error_count", F.coalesce(F.col("visible_error_count"), F.lit(0)))
         .withColumn(
             "efficiency_score",
             F.least(
@@ -248,9 +246,7 @@ def run_scoring(
                     F.lit(40.0)
                     - (
                         F.col("total_cost_usd")
-                        / F.greatest(
-                            F.col("num_interactions").cast("double"), F.lit(1.0)
-                        )
+                        / F.greatest(F.col("num_interactions").cast("double"), F.lit(1.0))
                     )
                     * 400,
                 ),
@@ -264,9 +260,7 @@ def run_scoring(
                     F.lit(50.0),
                     (
                         F.col("num_tool_calls")
-                        / F.greatest(
-                            F.col("num_interactions").cast("double"), F.lit(1.0)
-                        )
+                        / F.greatest(F.col("num_interactions").cast("double"), F.lit(1.0))
                     )
                     * 25,
                 )
@@ -284,9 +278,7 @@ def run_scoring(
                 ),
             ),
         )
-        .withColumn(
-            "autonomy_score", F.coalesce(F.col("auto_accept_rate"), F.lit(0.0)) * 100
-        )
+        .withColumn("autonomy_score", F.coalesce(F.col("auto_accept_rate"), F.lit(0.0)) * 100)
         .withColumn(
             "engagement_score",
             F.least(
@@ -295,9 +287,7 @@ def run_scoring(
                     F.lit(50.0),
                     F.col("session_duration_s").cast("double") / 60 * 50,
                 )
-                + F.least(
-                    F.lit(50.0), F.coalesce(F.col("avg_prompt_length"), F.lit(0.0))
-                ),
+                + F.least(F.lit(50.0), F.coalesce(F.col("avg_prompt_length"), F.lit(0.0))),
             ),
         )
         .withColumn(
