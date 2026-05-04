@@ -133,20 +133,20 @@ def test_build_replay_text_compresses_middle():
 
 def test_early_exit_when_no_new_sessions():
     spark = _make_mock_spark(table_exists=True, new_session_count=0)
-    run_scoring(spark, "cat", "silver", "cat.gold")
+    run_scoring(spark, "cat.silver", "cat.gold")
     merge_calls = [s for s in _sql_calls(spark) if "MERGE INTO" in s]
     assert len(merge_calls) == 0
 
 
 def test_creates_gold_table_if_not_exists():
     spark = _make_mock_spark(table_exists=False, new_session_count=2)
-    run_scoring(spark, "cat", "silver", "cat.gold")
+    run_scoring(spark, "cat.silver", "cat.gold")
     assert any("CREATE TABLE IF NOT EXISTS cat.gold.session_scores" in s for s in _sql_calls(spark))
 
 
 def test_merge_called_when_new_sessions():
     spark = _make_mock_spark(table_exists=True, new_session_count=3)
-    run_scoring(spark, "cat", "silver", "cat.gold")
+    run_scoring(spark, "cat.silver", "cat.gold")
     assert any("MERGE INTO cat.gold.session_scores" in s for s in _sql_calls(spark))
 
 
@@ -164,15 +164,13 @@ def test_main_creates_spark_and_stops():
             "argv",
             [
                 "score_sessions",
-                "--target-catalog",
-                "tc",
-                "--target-schema",
-                "ts",
+                "--silver-schema",
+                "tc.ts",
                 "--gold-schema",
                 "tc.gold",
             ],
         ):
             main()
         mock_create.assert_called_once()
-        mock_run.assert_called_once_with(mock_spark, "tc", "ts", "tc.gold")
+        mock_run.assert_called_once_with(mock_spark, "tc.ts", "tc.gold")
         mock_spark.stop.assert_called_once()

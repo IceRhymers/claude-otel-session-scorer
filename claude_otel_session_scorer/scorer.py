@@ -149,15 +149,14 @@ def _build_prompt_udf(
 
 def run_scoring(
     spark: SparkSession,
-    target_catalog: str,
-    target_schema: str,
+    silver_schema: str,
     gold_schema: str,
     replay_char_budget: int = _REPLAY_CHAR_BUDGET,
     keep_interactions: int = _KEEP_INTERACTIONS,
 ) -> None:
     """Run the full incremental scoring pipeline: discover → replay → score → judge → merge."""
-    silver_summary = f"{target_catalog}.{target_schema}.session_summary"
-    silver_events = f"{target_catalog}.{target_schema}.session_events"
+    silver_summary = f"{silver_schema}.session_summary"
+    silver_events = f"{silver_schema}.session_events"
     gold_scores = f"{gold_schema}.session_scores"
 
     # Only score sessions whose last span ended before the start of today (UTC),
@@ -365,17 +364,20 @@ def run_scoring(
 def main() -> None:
     """Entry point: parse args, create Spark session, run scoring, stop Spark."""
     parser = ArgumentParser(description="Score Claude Code sessions using LLM-as-judge")
-    parser.add_argument("--target-catalog", required=True)
-    parser.add_argument("--target-schema", required=True)
+    parser.add_argument(
+        "--silver-schema",
+        required=True,
+        help="Full catalog.schema, e.g. prod.claude_silver",
+    )
     parser.add_argument(
         "--gold-schema",
         required=True,
         help="Full catalog.schema, e.g. prod.claude_gold",
     )
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
     spark = create_spark_session()
     try:
-        run_scoring(spark, args.target_catalog, args.target_schema, args.gold_schema)
+        run_scoring(spark, args.silver_schema, args.gold_schema)
     finally:
         if os.environ.get("DATABRICKS_RUNTIME_VERSION") is None:
             spark.stop()
