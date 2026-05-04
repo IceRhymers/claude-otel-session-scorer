@@ -472,19 +472,17 @@ def _build_session_metrics(spark: SparkSession, bronze_metrics: str) -> DataFram
 
 def run_silver_etl(
     spark: SparkSession,
-    source_catalog: str,
-    source_schema: str,
-    target_catalog: str,
-    target_schema: str,
+    bronze_schema: str,
+    silver_schema: str,
 ) -> None:
-    bronze_traces = f"{source_catalog}.{source_schema}.claude_otel_traces"
-    bronze_metrics = f"{source_catalog}.{source_schema}.claude_otel_metrics"
-    bronze_logs = f"{source_catalog}.{source_schema}.claude_otel_logs"
-    silver_summary = f"{target_catalog}.{target_schema}.session_summary"
-    silver_events = f"{target_catalog}.{target_schema}.session_events"
-    silver_metrics = f"{target_catalog}.{target_schema}.session_metrics"
+    bronze_traces = f"{bronze_schema}.claude_otel_traces"
+    bronze_metrics = f"{bronze_schema}.claude_otel_metrics"
+    bronze_logs = f"{bronze_schema}.claude_otel_logs"
+    silver_summary = f"{silver_schema}.session_summary"
+    silver_events = f"{silver_schema}.session_events"
+    silver_metrics = f"{silver_schema}.session_metrics"
 
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {target_catalog}.{target_schema}")
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {silver_schema}")
 
     # session_summary — MERGE
     summary_df = _build_session_summary(spark, bronze_traces, bronze_metrics)
@@ -528,17 +526,21 @@ def main() -> None:
     parser = ArgumentParser(
         description="Silver ETL: transform bronze OTEL tables into silver session tables"
     )
-    parser.add_argument("--source-catalog", "-sc", required=True)
-    parser.add_argument("--source-schema", "-ss", required=True)
-    parser.add_argument("--target-catalog", "-tc", required=True)
-    parser.add_argument("--target-schema", "-ts", required=True)
-    args = parser.parse_args()
+    parser.add_argument(
+        "--bronze-schema",
+        required=True,
+        help="Full catalog.schema, e.g. prod.claude",
+    )
+    parser.add_argument(
+        "--silver-schema",
+        required=True,
+        help="Full catalog.schema, e.g. prod.claude_silver",
+    )
+    args, _ = parser.parse_known_args()
 
     spark = create_spark_session()
     try:
-        run_silver_etl(
-            spark, args.source_catalog, args.source_schema, args.target_catalog, args.target_schema
-        )
+        run_silver_etl(spark, args.bronze_schema, args.silver_schema)
     finally:
         spark.stop()
 
