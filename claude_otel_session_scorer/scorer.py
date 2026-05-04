@@ -218,68 +218,59 @@ def run_scoring(
 
     scored_df = (
         silver_df.join(visible_errors, "session_id", "left")
-        .withColumn("visible_error_count", F.coalesce(F.col("visible_error_count"), F.lit(0)))
+        .withColumn("visible_error_count", F.expr("COALESCE(visible_error_count, 0)"))
         .withColumn(
             "efficiency_score",
-            F.least(
-                F.lit(100.0),
-                F.coalesce(F.col("cache_hit_rate"), F.lit(0.0)) * 60
-                + F.greatest(
-                    F.lit(0.0),
-                    F.lit(40.0)
-                    - (
-                        F.coalesce(F.col("total_cost_usd"), F.lit(0.0))
-                        / F.greatest(F.col("num_interactions").cast("double"), F.lit(1.0))
+            F.expr("""
+                LEAST(100.0,
+                    COALESCE(cache_hit_rate, 0.0) * 60
+                    + GREATEST(0.0,
+                        40.0 - (COALESCE(total_cost_usd, 0.0)
+                                / GREATEST(CAST(num_interactions AS DOUBLE), 1.0)) * 400
                     )
-                    * 400,
-                ),
-            ),
+                )
+            """),
         )
         .withColumn(
             "productivity_score",
-            F.least(
-                F.lit(100.0),
-                F.least(
-                    F.lit(50.0),
-                    (
-                        F.coalesce(F.col("num_tool_calls"), F.lit(0))
-                        / F.greatest(F.col("num_interactions").cast("double"), F.lit(1.0))
+            F.expr("""
+                LEAST(100.0,
+                    LEAST(50.0,
+                        COALESCE(num_tool_calls, 0)
+                        / GREATEST(CAST(num_interactions AS DOUBLE), 1.0) * 25
                     )
-                    * 25,
+                    + LEAST(50.0, CAST(num_interactions AS DOUBLE) * 10)
                 )
-                + F.least(F.lit(50.0), F.col("num_interactions").cast("double") * 10),
-            ),
+            """),
         )
         .withColumn(
             "quality_score",
-            F.least(
-                F.lit(100.0),
-                F.coalesce(F.col("tool_success_rate"), F.lit(1.0)) * 70
-                + F.greatest(
-                    F.lit(0.0),
-                    F.lit(30.0) - F.col("visible_error_count").cast("double") * 15,
-                ),
-            ),
+            F.expr("""
+                LEAST(100.0,
+                    COALESCE(tool_success_rate, 1.0) * 70
+                    + GREATEST(0.0, 30.0 - CAST(visible_error_count AS DOUBLE) * 15)
+                )
+            """),
         )
-        .withColumn("autonomy_score", F.coalesce(F.col("auto_accept_rate"), F.lit(0.0)) * 100)
+        .withColumn("autonomy_score", F.expr("COALESCE(auto_accept_rate, 0.0) * 100"))
         .withColumn(
             "engagement_score",
-            F.least(
-                F.lit(100.0),
-                F.least(
-                    F.lit(50.0),
-                    F.coalesce(F.col("session_duration_s"), F.lit(0.0)).cast("double") / 60 * 50,
+            F.expr("""
+                LEAST(100.0,
+                    LEAST(50.0, COALESCE(CAST(session_duration_s AS DOUBLE), 0.0) / 60 * 50)
+                    + LEAST(50.0, COALESCE(avg_prompt_length, 0.0))
                 )
-                + F.least(F.lit(50.0), F.coalesce(F.col("avg_prompt_length"), F.lit(0.0))),
-            ),
+            """),
         )
         .withColumn(
             "composite_score",
-            F.col("efficiency_score") * 0.20
-            + F.col("productivity_score") * 0.25
-            + F.col("quality_score") * 0.20
-            + F.col("autonomy_score") * 0.15
-            + F.col("engagement_score") * 0.20,
+            F.expr("""
+                efficiency_score * 0.20
+                + productivity_score * 0.25
+                + quality_score * 0.20
+                + autonomy_score * 0.15
+                + engagement_score * 0.20
+            """),
         )
     )
 
