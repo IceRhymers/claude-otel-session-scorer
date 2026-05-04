@@ -1,0 +1,1146 @@
+{
+  "datasets": [
+    {
+      "name": "silver_session_summary",
+      "displayName": "Session Summary",
+      "config": {
+        "source": "tanner_fevm_catalog.claude_silver.session_summary",
+        "measures": [
+          {
+            "name": "session_count",
+            "expr": "COUNT(DISTINCT session_id)",
+            "displayName": "Total Sessions"
+          },
+          {
+            "name": "total_input_tokens",
+            "expr": "SUM(total_input_tokens)",
+            "displayName": "Total Input Tokens",
+            "format": {
+              "type": "number",
+              "abbreviation": "compact"
+            }
+          },
+          {
+            "name": "total_output_tokens",
+            "expr": "SUM(total_output_tokens)",
+            "displayName": "Total Output Tokens",
+            "format": {
+              "type": "number",
+              "abbreviation": "compact"
+            }
+          },
+          {
+            "name": "total_cache_read",
+            "expr": "SUM(total_cache_read)",
+            "displayName": "Total Cache Read",
+            "format": {
+              "type": "number",
+              "abbreviation": "compact"
+            }
+          },
+          {
+            "name": "avg_cache_hit_rate",
+            "expr": "AVG(cache_hit_rate)",
+            "displayName": "Avg Cache Hit Rate",
+            "format": {
+              "type": "percentage",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_tool_success_rate",
+            "expr": "AVG(tool_success_rate)",
+            "displayName": "Avg Tool Success Rate",
+            "format": {
+              "type": "percentage",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "total_cost",
+            "expr": "SUM(total_cost_usd)",
+            "displayName": "Total Cost USD",
+            "format": {
+              "type": "currency",
+              "currencyCode": "USD",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 2.0
+              }
+            }
+          },
+          {
+            "name": "avg_session_duration_min",
+            "expr": "AVG(session_duration_s) / 60.0",
+            "displayName": "Avg Session Duration (min)",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_tools_per_interaction",
+            "expr": "AVG(tools_per_interaction)",
+            "displayName": "Avg Tools per Interaction",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "total_tool_calls",
+            "expr": "SUM(num_tool_calls)",
+            "displayName": "Total Tool Calls"
+          },
+          {
+            "name": "total_llm_requests",
+            "expr": "SUM(num_llm_requests)",
+            "displayName": "Total LLM Requests"
+          }
+        ],
+        "filter": "num_interactions >= 2",
+        "version": 1.1,
+        "dimensions": [
+          {
+            "name": "session_id",
+            "expr": "session_id"
+          },
+          {
+            "name": "session_start",
+            "expr": "session_start",
+            "displayName": "Session Start",
+            "format": {
+              "type": "date_time",
+              "dateFormat": "locale_short_month",
+              "timeFormat": "locale_hour_minute"
+            }
+          },
+          {
+            "name": "session_date",
+            "expr": "DATE_TRUNC('DAY', session_start)",
+            "displayName": "Session Date",
+            "format": {
+              "type": "date",
+              "dateFormat": "year_month_day"
+            }
+          },
+          {
+            "name": "os_type",
+            "expr": "os_type",
+            "displayName": "OS Type"
+          },
+          {
+            "name": "terminal_type",
+            "expr": "terminal_type",
+            "displayName": "Terminal Type"
+          }
+        ]
+      }
+    },
+    {
+      "name": "gold_session_scores",
+      "displayName": "Session Scores",
+      "config": {
+        "source": "tanner_fevm_catalog.claude_gold.session_scores",
+        "measures": [
+          {
+            "name": "session_count",
+            "expr": "COUNT(DISTINCT session_id)",
+            "displayName": "Total Sessions",
+            "comment": "Count of distinct sessions"
+          },
+          {
+            "displayName": "Avg Composite Score",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            },
+            "name": "avg_composite",
+            "expr": "AVG(composite_score)",
+            "comment": "Average weighted composite score"
+          },
+          {
+            "name": "avg_efficiency",
+            "expr": "AVG(efficiency_score)",
+            "displayName": "Avg Efficiency",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_productivity",
+            "expr": "AVG(productivity_score)",
+            "displayName": "Avg Productivity",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_quality",
+            "expr": "AVG(quality_score)",
+            "displayName": "Avg Quality",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_autonomy",
+            "expr": "AVG(autonomy_score)",
+            "displayName": "Avg Autonomy",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_engagement",
+            "expr": "AVG(engagement_score)",
+            "displayName": "Avg Engagement",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_llm_task_clarity",
+            "expr": "AVG(llm_task_clarity)",
+            "displayName": "Avg Task Clarity",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_llm_agent_effectiveness",
+            "expr": "AVG(llm_agent_effectiveness)",
+            "displayName": "Avg Agent Effectiveness",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_llm_tool_strategy",
+            "expr": "AVG(llm_tool_strategy)",
+            "displayName": "Avg Tool Strategy",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_llm_error_handling",
+            "expr": "AVG(llm_error_handling)",
+            "displayName": "Avg Error Handling",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_llm_cost_efficiency",
+            "expr": "AVG(llm_cost_efficiency)",
+            "displayName": "Avg Cost Efficiency",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "avg_llm_overall",
+            "expr": "AVG(llm_overall_score)",
+            "displayName": "Avg LLM Overall",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "displayName": "Total Cost USD",
+            "format": {
+              "type": "currency",
+              "currencyCode": "USD",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 2.0
+              }
+            },
+            "name": "total_cost",
+            "expr": "SUM(total_cost_usd)",
+            "comment": "Sum of session costs"
+          },
+          {
+            "name": "avg_interactions",
+            "expr": "AVG(num_interactions)",
+            "displayName": "Avg Interactions",
+            "format": {
+              "type": "number",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          }
+        ],
+        "filter": "num_interactions >= 2",
+        "version": 1.1,
+        "dimensions": [
+          {
+            "name": "session_id",
+            "expr": "session_id",
+            "comment": "Unique session identifier"
+          },
+          {
+            "displayName": "Session Start",
+            "format": {
+              "type": "date_time",
+              "dateFormat": "locale_short_month",
+              "timeFormat": "locale_hour_minute"
+            },
+            "name": "session_start",
+            "expr": "session_start",
+            "comment": "When the session began"
+          },
+          {
+            "displayName": "Session Date",
+            "format": {
+              "type": "date",
+              "dateFormat": "year_month_day"
+            },
+            "name": "session_date",
+            "expr": "DATE_TRUNC('DAY', session_start)",
+            "comment": "Date of session start"
+          },
+          {
+            "name": "num_interactions",
+            "expr": "num_interactions",
+            "displayName": "Interactions",
+            "comment": "Number of user interactions in the session"
+          },
+          {
+            "name": "llm_summary",
+            "expr": "llm_summary",
+            "displayName": "LLM Summary",
+            "comment": "LLM-generated session summary"
+          },
+          {
+            "name": "llm_recommendations",
+            "expr": "llm_recommendations",
+            "displayName": "LLM Recommendations",
+            "comment": "LLM-generated improvement recommendations"
+          }
+        ]
+      }
+    }
+  ],
+  "pages": [
+    {
+      "name": "b350ceea",
+      "displayName": "Scores Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Claude Code Session Scores\n",
+                "Scoring across 5 dimensions (Efficiency 20%, Productivity 25%, Quality 20%, Autonomy 15%, Engagement 20%) plus LLM-as-judge evaluation"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_sessions",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "gold_session_scores",
+                  "fields": [
+                    {
+                      "name": "measure(session_count)",
+                      "expression": "MEASURE(`session_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": "Total Sessions",
+                "showTitle": true
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(session_count)",
+                  "displayName": "Total Sessions"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_composite",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "gold_session_scores",
+                  "fields": [
+                    {
+                      "name": "measure(avg_composite)",
+                      "expression": "MEASURE(`avg_composite`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Composite Score"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(avg_composite)",
+                  "displayName": "Avg Composite"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 3,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_cost",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "gold_session_scores",
+                  "fields": [
+                    {
+                      "name": "measure(total_cost)",
+                      "expression": "MEASURE(`total_cost`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Cost"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(total_cost)",
+                  "displayName": "Total Cost USD"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_interactions",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "gold_session_scores",
+                  "fields": [
+                    {
+                      "name": "measure(avg_interactions)",
+                      "expression": "MEASURE(`avg_interactions`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Interactions"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(avg_interactions)",
+                  "displayName": "Avg Interactions"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 3,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "score_dimensions_bar",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "gold_session_scores",
+                  "fields": [
+                    {
+                      "name": "measure(avg_efficiency)",
+                      "expression": "MEASURE(`avg_efficiency`)"
+                    },
+                    {
+                      "name": "measure(avg_productivity)",
+                      "expression": "MEASURE(`avg_productivity`)"
+                    },
+                    {
+                      "name": "measure(avg_quality)",
+                      "expression": "MEASURE(`avg_quality`)"
+                    },
+                    {
+                      "name": "measure(avg_autonomy)",
+                      "expression": "MEASURE(`avg_autonomy`)"
+                    },
+                    {
+                      "name": "measure(avg_engagement)",
+                      "expression": "MEASURE(`avg_engagement`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Score by Dimension"
+              },
+              "mark": {
+                "layout": "group"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "measure(avg_efficiency)",
+                      "displayName": "Efficiency (20%)"
+                    },
+                    {
+                      "fieldName": "measure(avg_productivity)",
+                      "displayName": "Productivity (25%)"
+                    },
+                    {
+                      "fieldName": "measure(avg_quality)",
+                      "displayName": "Quality (20%)"
+                    },
+                    {
+                      "fieldName": "measure(avg_autonomy)",
+                      "displayName": "Autonomy (15%)"
+                    },
+                    {
+                      "fieldName": "measure(avg_engagement)",
+                      "displayName": "Engagement (20%)"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "composite_timeline",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "gold_session_scores",
+                  "fields": [
+                    {
+                      "name": "session_start",
+                      "expression": "`session_start`"
+                    },
+                    {
+                      "name": "measure(avg_composite)",
+                      "expression": "MEASURE(`avg_composite`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Composite Score by Session"
+              },
+              "mark": {
+                "marker": {
+                  "shape": "circle"
+                }
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "session_start",
+                  "axis": {
+                    "title": "Session Start"
+                  },
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(avg_composite)",
+                  "axis": {
+                    "title": "Composite Score"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 6,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "llm_judge_bar",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "gold_session_scores",
+                  "fields": [
+                    {
+                      "name": "measure(avg_llm_task_clarity)",
+                      "expression": "MEASURE(`avg_llm_task_clarity`)"
+                    },
+                    {
+                      "name": "measure(avg_llm_agent_effectiveness)",
+                      "expression": "MEASURE(`avg_llm_agent_effectiveness`)"
+                    },
+                    {
+                      "name": "measure(avg_llm_tool_strategy)",
+                      "expression": "MEASURE(`avg_llm_tool_strategy`)"
+                    },
+                    {
+                      "name": "measure(avg_llm_error_handling)",
+                      "expression": "MEASURE(`avg_llm_error_handling`)"
+                    },
+                    {
+                      "name": "measure(avg_llm_cost_efficiency)",
+                      "expression": "MEASURE(`avg_llm_cost_efficiency`)"
+                    },
+                    {
+                      "name": "measure(avg_llm_overall)",
+                      "expression": "MEASURE(`avg_llm_overall`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "LLM Judge Scores"
+              },
+              "mark": {
+                "layout": "group"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "measure(avg_llm_task_clarity)",
+                      "displayName": "Task Clarity"
+                    },
+                    {
+                      "fieldName": "measure(avg_llm_agent_effectiveness)",
+                      "displayName": "Agent Effectiveness"
+                    },
+                    {
+                      "fieldName": "measure(avg_llm_tool_strategy)",
+                      "displayName": "Tool Strategy"
+                    },
+                    {
+                      "fieldName": "measure(avg_llm_error_handling)",
+                      "displayName": "Error Handling"
+                    },
+                    {
+                      "fieldName": "measure(avg_llm_cost_efficiency)",
+                      "displayName": "Cost Efficiency"
+                    },
+                    {
+                      "fieldName": "measure(avg_llm_overall)",
+                      "displayName": "Overall"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "activity_kpis",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "silver_session_summary",
+                  "fields": [
+                    {
+                      "name": "session_date",
+                      "expression": "`session_date`"
+                    },
+                    {
+                      "name": "measure(total_tool_calls)",
+                      "expression": "MEASURE(`total_tool_calls`)"
+                    },
+                    {
+                      "name": "measure(total_llm_requests)",
+                      "expression": "MEASURE(`total_llm_requests`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Session Activity"
+              },
+              "mark": {
+                "layout": "group"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "session_date",
+                  "axis": {
+                    "title": "Date"
+                  },
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "measure(total_tool_calls)",
+                      "displayName": "Tool Calls"
+                    },
+                    {
+                      "fieldName": "measure(total_llm_requests)",
+                      "displayName": "LLM Requests"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 12,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "session_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "gold_session_scores",
+                  "fields": [
+                    {
+                      "name": "session_start",
+                      "expression": "`session_start`"
+                    },
+                    {
+                      "name": "num_interactions",
+                      "expression": "`num_interactions`"
+                    },
+                    {
+                      "name": "measure(avg_composite)",
+                      "expression": "MEASURE(`avg_composite`)"
+                    },
+                    {
+                      "name": "measure(avg_efficiency)",
+                      "expression": "MEASURE(`avg_efficiency`)"
+                    },
+                    {
+                      "name": "measure(avg_productivity)",
+                      "expression": "MEASURE(`avg_productivity`)"
+                    },
+                    {
+                      "name": "measure(avg_quality)",
+                      "expression": "MEASURE(`avg_quality`)"
+                    },
+                    {
+                      "name": "measure(avg_autonomy)",
+                      "expression": "MEASURE(`avg_autonomy`)"
+                    },
+                    {
+                      "name": "measure(avg_engagement)",
+                      "expression": "MEASURE(`avg_engagement`)"
+                    },
+                    {
+                      "name": "measure(total_cost)",
+                      "expression": "MEASURE(`total_cost`)"
+                    },
+                    {
+                      "name": "measure(avg_llm_overall)",
+                      "expression": "MEASURE(`avg_llm_overall`)"
+                    },
+                    {
+                      "name": "llm_summary",
+                      "expression": "`llm_summary`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Session Details"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "session_start",
+                    "displayName": "Session Start"
+                  },
+                  {
+                    "fieldName": "num_interactions",
+                    "displayName": "Interactions"
+                  },
+                  {
+                    "fieldName": "measure(avg_composite)",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "Composite Score"
+                  },
+                  {
+                    "fieldName": "measure(avg_efficiency)",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "Efficiency"
+                  },
+                  {
+                    "fieldName": "measure(avg_productivity)",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "Productivity"
+                  },
+                  {
+                    "fieldName": "measure(avg_quality)",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "Quality"
+                  },
+                  {
+                    "fieldName": "measure(avg_autonomy)",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "Autonomy"
+                  },
+                  {
+                    "fieldName": "measure(avg_engagement)",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 1
+                      }
+                    },
+                    "displayName": "Engagement"
+                  },
+                  {
+                    "fieldName": "measure(total_cost)",
+                    "format": {
+                      "type": "number-currency",
+                      "abbreviation": "none",
+                      "currencyCode": "USD",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 2
+                      }
+                    },
+                    "displayName": "Cost USD"
+                  },
+                  {
+                    "fieldName": "measure(avg_llm_overall)",
+                    "format": {
+                      "type": "number-plain",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 0
+                      }
+                    },
+                    "displayName": "LLM Overall"
+                  },
+                  {
+                    "fieldName": "llm_summary",
+                    "displayName": "Summary"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "date_range_filter",
+            "queries": [
+              {
+                "name": "dashboards/01f147c105f3130e9e37e35a49c90f6c/datasets/01f147c18b9115a180bc73d665172645_session_start",
+                "query": {
+                  "datasetName": "gold_session_scores",
+                  "fields": [
+                    {
+                      "name": "session_start",
+                      "expression": "`session_start`"
+                    },
+                    {
+                      "name": "session_start_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f147c105f3130e9e37e35a49c90f6c/datasets/01f147c189df19f0a8d675865ec8568e_session_start",
+                "query": {
+                  "datasetName": "silver_session_summary",
+                  "fields": [
+                    {
+                      "name": "session_start",
+                      "expression": "`session_start`"
+                    },
+                    {
+                      "name": "session_start_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Session Time Range"
+              },
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "session_start",
+                    "queryName": "dashboards/01f147c105f3130e9e37e35a49c90f6c/datasets/01f147c18b9115a180bc73d665172645_session_start"
+                  },
+                  {
+                    "fieldName": "session_start",
+                    "queryName": "dashboards/01f147c105f3130e9e37e35a49c90f6c/datasets/01f147c189df19f0a8d675865ec8568e_session_start"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 12,
+            "height": 1
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "global_filters",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
