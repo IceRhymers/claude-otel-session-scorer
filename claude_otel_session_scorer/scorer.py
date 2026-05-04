@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import IntegerType, StringType, StructField, StructType
+from pyspark.sql.types import StringType
 
 logger = logging.getLogger(__name__)
 
@@ -17,31 +17,16 @@ _REPLAY_CHAR_BUDGET = 30_000
 _KEEP_INTERACTIONS = 2
 
 RESPONSE_FORMAT = (
-    '{"type":"json_object","schema":{"type":"object","properties":{"judgment":{"type":"object",'
-    '"properties":{"task_clarity":{"type":"integer"},"agent_effectiveness":{"type":"integer"},'
-    '"tool_strategy":{"type":"integer"},"error_handling":{"type":"integer"},'
-    '"cost_efficiency":{"type":"integer"},"overall_score":{"type":"integer"},'
-    '"summary":{"type":"string"},"recommendations":{"type":"string"}}}}}}'
+    "STRUCT<judgment STRUCT<"
+    "task_clarity INT, agent_effectiveness INT, tool_strategy INT, "
+    "error_handling INT, cost_efficiency INT, overall_score INT, "
+    "summary STRING, recommendations STRING>>"
 )
 
-JUDGMENT_SCHEMA = StructType(
-    [
-        StructField(
-            "judgment",
-            StructType(
-                [
-                    StructField("task_clarity", IntegerType()),
-                    StructField("agent_effectiveness", IntegerType()),
-                    StructField("tool_strategy", IntegerType()),
-                    StructField("error_handling", IntegerType()),
-                    StructField("cost_efficiency", IntegerType()),
-                    StructField("overall_score", IntegerType()),
-                    StructField("summary", StringType()),
-                    StructField("recommendations", StringType()),
-                ]
-            ),
-        )
-    ]
+FLAT_SCHEMA = (
+    "task_clarity INT, agent_effectiveness INT, tool_strategy INT, "
+    "error_handling INT, cost_efficiency INT, overall_score INT, "
+    "summary STRING, recommendations STRING"
 )
 
 
@@ -178,7 +163,7 @@ def run_scoring(
     # Only score sessions whose last span ended before the start of today (UTC),
     # ensuring the session is complete before committing an immutable score.
     completed_sessions_df = spark.table(silver_summary).filter(
-        F.col("session_end") < F.date_trunc("day", F.current_timestamp())
+        F.col("session_end") < F.current_timestamp() - F.expr("INTERVAL 2 HOURS")
     )
 
     if spark.catalog.tableExists(gold_scores):
@@ -196,26 +181,24 @@ def run_scoring(
 
     logger.info("Scoring %d new sessions.", count)
 
-    events_df = (
-        spark.table(silver_events)
-        .join(new_sessions_df, "session_id")
-        .orderBy("session_id", "event_ts")
-    )
+    events_df = spark.table(silver_events).join(new_sessions_df, "session_id")
     replay_df = (
         events_df.groupBy("session_id")
         .agg(
-            F.collect_list(
-                F.struct(
-                    "event_ts",
-                    "event_type",
-                    "detail_name",
-                    "model",
-                    "input_tokens",
-                    "output_tokens",
-                    "cost_usd",
-                    "error_category",
-                    "content_preview",
-                    "duration_ms",
+            F.sort_array(
+                F.collect_list(
+                    F.struct(
+                        "event_ts",
+                        "event_type",
+                        "detail_name",
+                        "model",
+                        "input_tokens",
+                        "output_tokens",
+                        "cost_usd",
+                        "error_category",
+                        "content_preview",
+                        "duration_ms",
+                    )
                 )
             ).alias("events")
         )
@@ -240,12 +223,12 @@ def run_scoring(
             "efficiency_score",
             F.least(
                 F.lit(100.0),
-                F.col("cache_hit_rate") * 60
+                F.coalesce(F.col("cache_hit_rate"), F.lit(0.0)) * 60
                 + F.greatest(
                     F.lit(0.0),
                     F.lit(40.0)
                     - (
-                        F.col("total_cost_usd")
+                        F.coalesce(F.col("total_cost_usd"), F.lit(0.0))
                         / F.greatest(F.col("num_interactions").cast("double"), F.lit(1.0))
                     )
                     * 400,
@@ -259,7 +242,7 @@ def run_scoring(
                 F.least(
                     F.lit(50.0),
                     (
-                        F.col("num_tool_calls")
+                        F.coalesce(F.col("num_tool_calls"), F.lit(0))
                         / F.greatest(F.col("num_interactions").cast("double"), F.lit(1.0))
                     )
                     * 25,
@@ -285,7 +268,7 @@ def run_scoring(
                 F.lit(100.0),
                 F.least(
                     F.lit(50.0),
-                    F.col("session_duration_s").cast("double") / 60 * 50,
+                    F.coalesce(F.col("session_duration_s"), F.lit(0.0)).cast("double") / 60 * 50,
                 )
                 + F.least(F.lit(50.0), F.coalesce(F.col("avg_prompt_length"), F.lit(0.0))),
             ),
@@ -319,7 +302,7 @@ def run_scoring(
         ),
     ).withColumn(
         "judgment",
-        F.from_json(F.col("ai_response"), JUDGMENT_SCHEMA).getField("judgment"),
+        F.from_json(F.col("ai_response"), FLAT_SCHEMA),
     )
 
     gold_df = ai_result.select(
@@ -344,7 +327,9 @@ def run_scoring(
         F.col("judgment.recommendations").alias("llm_recommendations"),
         F.lit(datetime.now(timezone.utc)).cast("timestamp").alias("scored_at"),
     )
+    gold_df = gold_df.filter(F.col("llm_overall_score").isNotNull())
 
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {gold_schema}")
     spark.sql(
         f"""
         CREATE TABLE IF NOT EXISTS {gold_scores} (
@@ -401,4 +386,5 @@ def main() -> None:
     try:
         run_scoring(spark, args.target_catalog, args.target_schema, args.gold_schema)
     finally:
-        spark.stop()
+        if os.environ.get("DATABRICKS_RUNTIME_VERSION") is None:
+            spark.stop()
