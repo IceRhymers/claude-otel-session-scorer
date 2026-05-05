@@ -41,9 +41,7 @@ def test_creates_gold_tables_if_not_exist():
         "CREATE TABLE IF NOT EXISTS cat.gold.session_human_signals_by_tool" in s for s in sql
     )
     # Both DDLs must use Delta + auto-clustering.
-    ddls = [
-        s for s in sql if "CREATE TABLE IF NOT EXISTS cat.gold.session_human_signals" in s
-    ]
+    ddls = [s for s in sql if "CREATE TABLE IF NOT EXISTS cat.gold.session_human_signals" in s]
     for ddl in ddls:
         assert "USING DELTA" in ddl
         assert "CLUSTER BY AUTO" in ddl
@@ -146,11 +144,11 @@ def test_correction_window_35s_not_counted():
 def test_num_corrections_deterministic_under_ts_ties():
     # Window must order on (event_ts, event_type) for a stable tie-breaker.
     src = inspect.getsource(run_human_signals)
-    assert 'orderBy(' in src
+    assert "orderBy(" in src
     assert '"event_ts"' in src
     assert '"event_type"' in src
     # Both orderBy keys must appear in the same Window.partitionBy call.
-    assert "partitionBy(\"session_id\")" in src or "partitionBy('session_id')" in src
+    assert 'partitionBy("session_id")' in src or "partitionBy('session_id')" in src
 
 
 def test_correction_window_constant_is_thirty():
@@ -165,9 +163,7 @@ def test_per_tool_table_one_row_per_tool():
     assert 'groupBy("session_id", "tool_name")' in src
     # And the per-tool MERGE must key on both columns.
     sql = _sql_calls(spark)
-    by_tool_merges = [
-        s for s in sql if "MERGE INTO cat.gold.session_human_signals_by_tool" in s
-    ]
+    by_tool_merges = [s for s in sql if "MERGE INTO cat.gold.session_human_signals_by_tool" in s]
     assert len(by_tool_merges) == 1
     assert "tool_name" in by_tool_merges[0]
     # And a DELETE-before-MERGE must clear stale rows for recomputed sessions.
