@@ -41,6 +41,16 @@ resources:
               silver-schema: "{{job.parameters.silver_schema}}"
               gold-schema: "{{job.parameters.gold_schema}}"
           environment_key: Default
+        - task_key: "score_human_signals"
+          depends_on:
+            - task_key: "silver_etl"
+          python_wheel_task:
+            package_name: "claude_otel_session_scorer"
+            entry_point: "score_human_signals"
+            named_parameters:
+              silver-schema: "{{job.parameters.silver_schema}}"
+              gold-schema: "{{job.parameters.gold_schema}}"
+          environment_key: Default
       queue:
         enabled: true
       environments:
