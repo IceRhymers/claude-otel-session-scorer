@@ -37,9 +37,7 @@ def compute_friction_score(
     if not signal_strength:
         return None
     raw = 100.0 * (
-        0.4 * (reject_rate or 0.0)
-        + 0.3 * (abort_rate or 0.0)
-        + 0.3 * (correction_intensity or 0.0)
+        0.4 * (reject_rate or 0.0) + 0.3 * (abort_rate or 0.0) + 0.3 * (correction_intensity or 0.0)
     )
     return min(100.0, max(0.0, raw))
 
@@ -306,9 +304,7 @@ def run_human_signals(
     # Per-tool: delete stale rows for recomputed sessions, then MERGE the
     # current rows. This handles the disappearing-tool case where a session
     # no longer has a TOOL_DECISION for some tool that was present last run.
-    session_keys.select("session_id").createOrReplaceTempView(
-        "human_signals_recomputed_sessions"
-    )
+    session_keys.select("session_id").createOrReplaceTempView("human_signals_recomputed_sessions")
     spark.sql(
         f"DELETE FROM {gold_by_tool} "
         f"WHERE session_id IN (SELECT session_id FROM human_signals_recomputed_sessions)"
