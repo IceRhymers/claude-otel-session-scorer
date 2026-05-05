@@ -14,38 +14,7 @@ A Databricks AI/BI dashboard (`dashboards/Claude Code Session Scores V1.lvdash.j
 
 ## Architecture
 
-```
-                               ┌─────────────────────────────┐
-                               │ Bronze (written by OTLP      │
-                               │ proxy in databricks-claude)  │
-                               │                              │
-                               │  claude_otel_traces          │
-                               │  claude_otel_logs            │
-                               │  claude_otel_metrics         │
-                               └──────────────┬───────────────┘
-                                              │
-                                       silver_etl (MERGE)
-                                              │
-                               ┌──────────────▼───────────────┐
-                               │ Silver                       │
-                               │                              │
-                               │  session_summary             │
-                               │  session_events              │
-                               │  session_metrics             │
-                               └──┬───────────────────────┬───┘
-                                  │                       │
-                       score_sessions              score_human_signals
-                       (LLM judge,                 (deterministic,
-                        immutable,                  recomputable,
-                        left_anti gate)             MERGE UPDATE *)
-                                  │                       │
-                       ┌──────────▼─────┐    ┌────────────▼──────────────────┐
-                       │ Gold           │    │ Gold                          │
-                       │                │    │                               │
-                       │ session_scores │    │ session_human_signals         │
-                       │                │    │ session_human_signals_by_tool │
-                       └────────────────┘    └───────────────────────────────┘
-```
+![Pipeline architecture](docs/pipeline.png)
 
 | Stage  | Writers                  | Tables                                                                                  | Pattern                                                                               |
 | ------ | ------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -142,8 +111,7 @@ CI (`.github/workflows/ci.yml`) runs ruff lint, ruff format check, pytest, and a
 
 ## Contributing
 
-- See [CLAUDE.md](./CLAUDE.md) for repo conventions and architecture context for AI coding assistants.
-- See [AGENTS.md](./AGENTS.md) for the contract autonomous agents must follow when editing this repo.
+- See [AGENTS.md](./AGENTS.md) for repo conventions, architecture context, and the contract autonomous agents must follow when editing this repo. (`CLAUDE.md` is a one-line redirect to the same file.)
 
 ## License
 
