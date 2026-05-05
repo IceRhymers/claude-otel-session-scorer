@@ -216,6 +216,9 @@ def _build_session_events(spark: SparkSession, bronze_traces: str, bronze_logs: 
         F.lit(None).cast("string").alias("model"),
         F.lit(None).cast("string").alias("tool_name"),
         F.lit(None).cast("string").alias("error_category"),
+        F.col("attributes").getItem("prompt.id").alias("prompt_id"),
+        F.lit(None).cast("string").alias("tool_use_id"),
+        F.lit(None).cast("string").alias("decision_source"),
     )
 
     llm_events = logs.filter(F.col("body") == "claude_code.api_request").select(
@@ -242,6 +245,9 @@ def _build_session_events(spark: SparkSession, bronze_traces: str, bronze_logs: 
         F.col("attributes").getItem("model").alias("model"),
         F.lit(None).cast("string").alias("tool_name"),
         F.lit(None).cast("string").alias("error_category"),
+        F.col("attributes").getItem("prompt.id").alias("prompt_id"),
+        F.lit(None).cast("string").alias("tool_use_id"),
+        F.lit(None).cast("string").alias("decision_source"),
     )
 
     tool_call_events = traces.filter(F.col("name") == "claude_code.tool").select(
@@ -266,6 +272,9 @@ def _build_session_events(spark: SparkSession, bronze_traces: str, bronze_logs: 
         F.lit(None).cast("string").alias("model"),
         F.col("attributes").getItem("tool_name").alias("tool_name"),
         F.lit(None).cast("string").alias("error_category"),
+        F.lit(None).cast("string").alias("prompt_id"),
+        F.col("attributes").getItem("tool_use_id").alias("tool_use_id"),
+        F.lit(None).cast("string").alias("decision_source"),
     )
 
     tool_decision_events = logs.filter(F.col("body") == "claude_code.tool_decision").select(
@@ -291,6 +300,9 @@ def _build_session_events(spark: SparkSession, bronze_traces: str, bronze_logs: 
         F.lit(None).cast("string").alias("model"),
         F.col("attributes").getItem("tool_name").alias("tool_name"),
         F.lit(None).cast("string").alias("error_category"),
+        F.col("attributes").getItem("prompt.id").alias("prompt_id"),
+        F.col("attributes").getItem("tool_use_id").alias("tool_use_id"),
+        F.col("attributes").getItem("source").alias("decision_source"),
     )
 
     tool_result_events = logs.filter(F.col("body") == "claude_code.tool_result").select(
@@ -316,6 +328,9 @@ def _build_session_events(spark: SparkSession, bronze_traces: str, bronze_logs: 
         F.lit(None).cast("string").alias("model"),
         F.col("attributes").getItem("tool_name").alias("tool_name"),
         F.lit(None).cast("string").alias("error_category"),
+        F.col("attributes").getItem("prompt.id").alias("prompt_id"),
+        F.col("attributes").getItem("tool_use_id").alias("tool_use_id"),
+        F.lit(None).cast("string").alias("decision_source"),
     )
 
     error_events = logs.filter(
@@ -365,6 +380,9 @@ def _build_session_events(spark: SparkSession, bronze_traces: str, bronze_logs: 
         )
         .otherwise(F.lit("user_visible"))
         .alias("error_category"),
+        F.col("attributes").getItem("prompt.id").alias("prompt_id"),
+        F.lit(None).cast("string").alias("tool_use_id"),
+        F.lit(None).cast("string").alias("decision_source"),
     )
 
     return (
@@ -505,7 +523,7 @@ def run_silver_etl(
     spark.sql(
         f"DELETE FROM {silver_events} WHERE session_id IN (SELECT session_id FROM incoming_session_ids)"
     )
-    events_df.write.mode("append").saveAsTable(silver_events)
+    events_df.write.mode("append").option("mergeSchema", "true").saveAsTable(silver_events)
     print(f"✔ {silver_events}: {spark.table(silver_events).count()} events")
 
     # session_metrics — MERGE

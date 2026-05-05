@@ -2,8 +2,10 @@
 Tests for the silver_etl module
 """
 
+import inspect
 from unittest.mock import MagicMock, patch
 
+from claude_otel_session_scorer import silver_etl
 from claude_otel_session_scorer.silver_etl import main, run_silver_etl
 
 
@@ -59,6 +61,33 @@ def test_session_metrics_merge():
     assert len(merge_calls) == 1
     assert "WHEN MATCHED THEN UPDATE SET *" in merge_calls[0]
     assert "WHEN NOT MATCHED THEN INSERT *" in merge_calls[0]
+
+
+def test_session_events_includes_prompt_id_column():
+    src = inspect.getsource(silver_etl._build_session_events)
+    # All seven event projections must alias a prompt_id column.
+    assert src.count('alias("prompt_id")') >= 6
+    # And the tool_decision arm should source it from attributes.getItem("prompt.id").
+    assert 'getItem("prompt.id")' in src
+
+
+def test_session_events_includes_tool_use_id_column():
+    src = inspect.getsource(silver_etl._build_session_events)
+    assert src.count('alias("tool_use_id")') >= 6
+    assert 'getItem("tool_use_id")' in src
+
+
+def test_session_events_includes_decision_source_column():
+    src = inspect.getsource(silver_etl._build_session_events)
+    assert src.count('alias("decision_source")') >= 6
+    # The tool_decision arm sources it from attributes.getItem("source").
+    assert 'getItem("source").alias("decision_source")' in src
+
+
+def test_session_events_append_uses_merge_schema():
+    src = inspect.getsource(silver_etl.run_silver_etl)
+    assert '.option("mergeSchema", "true")' in src
+    assert ".saveAsTable(silver_events)" in src
 
 
 def test_main_creates_spark_and_stops():
