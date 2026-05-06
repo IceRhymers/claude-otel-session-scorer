@@ -91,10 +91,12 @@ When a schema change *is* approved, include in the PR:
 ```bash
 # 1. Install Poetry, then dependencies
 curl -sSL https://install.python-poetry.org | python3 -
-poetry install
+poetry install                              # tests + ruff + pyspark/delta-spark
+poetry install --without test --with databricks-connect   # to run pipelines locally against a real workspace
 
-# 2. Authenticate Databricks Connect (Python 3.12, runtime 18.0.5 client)
-#    Configure DATABRICKS_HOST + DATABRICKS_TOKEN (or a profile) per
+# 2. (Only when running against a real workspace.) Authenticate Databricks
+#    Connect (Python 3.12, runtime 18.0.5 client). Configure
+#    DATABRICKS_HOST + DATABRICKS_TOKEN (or a profile) per
 #    https://docs.databricks.com/dev-tools/databricks-connect.html
 
 # 3. Run a pipeline locally against a remote workspace
@@ -150,21 +152,24 @@ Unity Catalog three-part table names are required for every `--*-schema` flag (`
 ## 6. Testing
 
 ```bash
-poetry install           # one-time
+poetry install           # one-time (default groups include `test`: pyspark + delta-spark)
 poetry run pytest tests/ -v
 # or:
 make test
 ```
 
-Tests do **not** spin up a real Spark — they wrap `MagicMock` and validate behavior either via mock-call assertions on `spark.sql(...)` or via `inspect.getsource(...)` against pinned strings. When you add a feature, add the equivalent test in the matching style.
+The `human_signals` behavioral tests spin up an in-process `SparkSession` with delta-spark, so a JVM is required:
 
-Any new pipeline module — or any new transform inside an existing pipeline — must ship with a PySpark unit test in `tests/test_<module>.py`. Follow the established patterns:
+- **Java 17** must be on `PATH` (or `JAVA_HOME` set). Spark 3.5 / delta-spark 3.3 only support Java 8/11/17. CI installs it via `actions/setup-java` (Temurin 17).
+- The first test run downloads the delta-spark jar via Ivy (`~/.ivy2/cache`); subsequent runs are offline.
 
-1. **`MagicMock` Spark.** Use the `_make_mock_spark` / `_sql_calls` helpers as the template. Never instantiate a real `SparkSession` in tests.
-2. **Assert on `spark.sql(...)` calls.** Walk `spark.sql.call_args_list` to verify DDL, MERGE, and DELETE statements landed.
-3. **Source-level invariants where shape matters.** Use `inspect.getsource(fn)` and substring asserts to lock in things like `"INTERVAL 2 HOURS"`, `<= _CORRECTION_WINDOW_SECONDS`, `groupBy("session_id", "tool_name")`, etc.
-4. **Pure helpers covered directly.** `compute_friction_score`, `split_into_interactions`, `build_replay_text`, `compress_interaction`, `format_event_line` all have direct unit tests — keep that.
-5. **`main()` round-trip.** Each entry point has a `test_main_creates_spark_and_stops` that patches `create_spark_session` and `run_*`, asserts the right CLI args route through, and asserts `spark.stop()` is called. Mirror this for any new entry point.
+Test design (see `tests/conftest.py` for shared fixtures):
+
+1. **Behavioral, real-Spark, where possible.** The pipeline is exercised end-to-end against an in-process Delta-enabled `SparkSession` (`spark`, `silver_schema`, `gold_schema`, `make_silver_tables` fixtures). Assert on the rows actually written to the gold tables.
+2. **`MagicMock` Spark only when shape is the contract.** `_make_mock_spark` / `_sql_calls` (in `tests/conftest.py`) are kept for the cases where there's nothing to behaviorally observe — DDL emitted, MERGE keying, the `main()` entry-point wiring.
+3. **Pure helpers covered directly.** `compute_friction_score`, `split_into_interactions`, `build_replay_text`, `compress_interaction`, `format_event_line` all have direct unit tests — keep that.
+4. **`main()` round-trip.** Each entry point has a `test_main_creates_spark_and_stops` that patches `create_spark_session` and `run_*`, asserts the right CLI args route through, and asserts `spark.stop()` is called. Mirror this for any new entry point.
+5. **Avoid `inspect.getsource(...)` substring asserts.** They break on cosmetic refactors and pass silently when runtime logic regresses. Use a behavioral test against the `spark` fixture instead.
 
 Tests must remain offline — never introduce a real LLM/API call in a test.
 
