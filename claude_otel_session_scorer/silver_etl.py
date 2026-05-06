@@ -1,22 +1,10 @@
-import os
 from argparse import ArgumentParser
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
-
-def create_spark_session() -> SparkSession:
-    if os.environ.get("DATABRICKS_RUNTIME_VERSION") is None:
-        try:
-            from databricks.connect import DatabricksSession
-
-            return DatabricksSession.builder.serverless().getOrCreate()
-        except ImportError:
-            print("Databricks Connect not available. Falling back to standard Spark session.")
-            return SparkSession.builder.getOrCreate()
-    else:
-        return SparkSession.builder.getOrCreate()
+from claude_otel_session_scorer._spark import create_spark_session
 
 
 def _safe_event_attr(attr_key: str):
