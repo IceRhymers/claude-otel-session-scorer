@@ -3,6 +3,7 @@ Tests for the silver_etl module
 """
 
 import inspect
+import os
 from unittest.mock import MagicMock, patch
 
 from claude_otel_session_scorer import silver_etl
@@ -91,9 +92,11 @@ def test_session_events_append_uses_merge_schema():
 
 
 def test_main_creates_spark_and_stops():
+    env_without_dbr = {k: v for k, v in os.environ.items() if k != "DATABRICKS_RUNTIME_VERSION"}
     with (
         patch("claude_otel_session_scorer.silver_etl.create_spark_session") as mock_create,
         patch("claude_otel_session_scorer.silver_etl.run_silver_etl") as mock_run,
+        patch.dict(os.environ, env_without_dbr, clear=True),
     ):
         mock_spark = MagicMock()
         mock_create.return_value = mock_spark
@@ -113,3 +116,44 @@ def test_main_creates_spark_and_stops():
         mock_create.assert_called_once()
         mock_run.assert_called_once_with(mock_spark, "sc.ss", "tc.ts")
         mock_spark.stop.assert_called_once()
+
+
+def test_main_does_not_stop_spark_inside_databricks():
+    """spark.stop() must be suppressed when DATABRICKS_RUNTIME_VERSION is set."""
+    with (
+        patch("claude_otel_session_scorer.silver_etl.create_spark_session") as mock_create,
+        patch("claude_otel_session_scorer.silver_etl.run_silver_etl"),
+        patch.dict(os.environ, {"DATABRICKS_RUNTIME_VERSION": "14.3"}),
+    ):
+        mock_spark = MagicMock()
+        mock_create.return_value = mock_spark
+
+        with patch("sys.argv", ["silver_etl", "--bronze-schema", "a.b", "--silver-schema", "c.d"]):
+            main()
+
+        mock_spark.stop.assert_not_called()
+
+
+def test_session_metrics_written_before_summary():
+    """session_metrics must be merged before session_summary so summary can join cost/active_time."""
+    spark = _make_mock_spark()
+    run_silver_etl(spark, "cat.src", "cat.tgt")
+    sql_calls = _sql_calls(spark)
+    metrics_pos = next(
+        i for i, s in enumerate(sql_calls) if "MERGE INTO cat.tgt.session_metrics" in s
+    )
+    summary_pos = next(
+        i for i, s in enumerate(sql_calls) if "MERGE INTO cat.tgt.session_summary" in s
+    )
+    assert metrics_pos < summary_pos, "session_metrics MERGE must precede session_summary MERGE"
+
+
+def test_summary_derives_cost_and_active_time_from_metrics():
+    """run_silver_etl must join cost/active_time from metrics_df rather than re-aggregating."""
+    src = inspect.getsource(silver_etl.run_silver_etl)
+    # The summary builder should no longer receive bronze_metrics
+    assert "_build_session_summary(spark, bronze_traces)" in src
+    # cost and active_time must be derived via a join from the metrics DataFrame
+    assert "active_time_cli_s" in src
+    assert "active_time_user_s" in src
+    assert "total_active_time_s" in src
