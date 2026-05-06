@@ -1,4 +1,69 @@
-"""Incremental LLM-as-judge scoring pipeline for Claude Code sessions."""
+"""Incremental LLM-as-judge scoring pipeline for Claude Code sessions.
+
+IMMUTABILITY CONTRACT — READ THIS BEFORE MODIFYING THE SCORING LOGIC
+======================================================================
+
+The 2-hour idle heuristic
+--------------------------
+This pipeline considers a session "complete" when its ``session_end`` timestamp
+is more than **2 hours** in the past (``session_end < current_timestamp() - INTERVAL
+2 HOURS``).  This is a **practical heuristic**, not a true completion signal.
+Claude Code does not emit an explicit "session closed" event; we infer
+completeness from observed inactivity.
+
+Consequence: sessions that resume after a long idle gap
+--------------------------------------------------------
+If a user pauses a session for more than 2 hours and then resumes it:
+
+1. The session looks "complete" at the 2-hour mark — it clears the idle filter.
+2. On the next pipeline run the ``left_anti`` join (see below) finds no existing
+   gold row, so the *partial* session gets scored and written to
+   ``gold.session_scores``.
+3. When the user resumes and new silver events arrive, the session's
+   ``session_end`` advances — but the pipeline's ``left_anti`` join now
+   *excludes* it because a gold row already exists.
+4. **The gold score is never updated.**  The original (partial) score silently
+   remains as the permanent record for that session.
+
+The ``left_anti`` immutability guard
+-------------------------------------
+``gold.session_scores`` is an **append-only, write-once** table.  The
+``left_anti`` join against existing rows in ``run_scoring`` is the enforcement
+mechanism: once a session_id appears in ``gold.session_scores`` it is
+permanently excluded from future scoring runs.  This is intentional — re-scoring
+would be expensive (each score costs an ``ai_query`` LLM call) and would
+destroy the stable historical record that downstream dashboards and analyses
+depend on.
+
+When this behaviour is safe
+-----------------------------
+- **Interactive development sessions** where the user actively works and wraps
+  up within a couple of hours.  These are the expected common case.
+- **Short automated agent runs** that complete well within the 2-hour window.
+
+When this behaviour is NOT safe (silent data loss)
+----------------------------------------------------
+- **Long-running overnight or multi-day jobs** — a session started in the
+  evening and resumed the next morning will be silently split: the first
+  partial chunk is scored permanently, and the resumed work is treated as a
+  brand-new session.
+- **Sessions that span multiple working days** — same problem; each >2-hour
+  idle gap creates a new effective session boundary.
+
+If these cases apply to your workload, consider:
+- Increasing or making configurable the idle threshold (``INTERVAL 2 HOURS``).
+- Emitting an explicit session-close signal from the OTLP proxy so the filter
+  can key on a real completion event instead of inferred inactivity.
+- Relaxing immutability to allow re-scoring within a grace window after the
+  first score is written.
+
+Schema and locking notes
+-------------------------
+``RESPONSE_FORMAT``, ``FLAT_SCHEMA``, and the ``CREATE TABLE IF NOT EXISTS``
+DDL for ``gold.session_scores`` must always stay in sync.  Adding or removing
+a judgment field requires updating all three and accompanying a PR with an
+explicit ``ALTER TABLE`` migration note (see AGENTS.md §3).
+"""
 
 from __future__ import annotations
 
@@ -147,8 +212,8 @@ def run_scoring(
     silver_events = f"{silver_schema}.session_events"
     gold_scores = f"{gold_schema}.session_scores"
 
-    # Only score sessions whose last span ended before the start of today (UTC),
-    # ensuring the session is complete before committing an immutable score.
+    # 2-hour idle gap heuristic — not a true completion signal. Sessions resuming after >2h are treated as new.
+    # (See module docstring for full implications.)
     completed_sessions_df = spark.table(silver_summary).filter(
         F.col("session_end") < F.current_timestamp() - F.expr("INTERVAL 2 HOURS")
     )
@@ -156,7 +221,7 @@ def run_scoring(
     if spark.catalog.tableExists(gold_scores):
         existing = spark.table(gold_scores).select("session_id")
         new_sessions_df = completed_sessions_df.select("session_id").join(
-            existing, "session_id", "left_anti"
+            existing, "session_id", "left_anti"  # Immutability guard: sessions already scored are excluded. See module docstring.
         )
     else:
         new_sessions_df = completed_sessions_df.select("session_id")
@@ -308,6 +373,9 @@ def run_scoring(
     gold_df = gold_df.filter(F.col("llm_overall_score").isNotNull())
 
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {gold_schema}")
+    # gold.session_scores is write-once / immutable per session_id.
+    # The left_anti join above enforces this: existing rows are never updated.
+    # See module docstring for the immutability contract and its trade-offs.
     spark.sql(
         f"""
         CREATE TABLE IF NOT EXISTS {gold_scores} (
