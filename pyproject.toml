@@ -19,7 +19,6 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-claude_otel_session_scorer = "claude_otel_session_scorer.main:main"
 silver_etl = "claude_otel_session_scorer.silver_etl:main"
 score_sessions = "claude_otel_session_scorer.scorer:main"
 score_human_signals = "claude_otel_session_scorer.human_signals:main"

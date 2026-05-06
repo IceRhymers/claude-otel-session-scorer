@@ -73,7 +73,6 @@ When a schema change *is* approved, include in the PR:
 
 | Path                                                   | What it does                                                                                                  |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `claude_otel_session_scorer/main.py`                   | `claude_otel_session_scorer` CLI (table-scan utility) + canonical `create_spark_session()`                    |
 | `claude_otel_session_scorer/silver_etl.py`             | Bronze→silver. Three builders: `_build_session_summary`, `_build_session_events`, `_build_session_metrics`    |
 | `claude_otel_session_scorer/scorer.py`                 | LLM-as-judge. `format_event_line` / `split_into_interactions` / `compress_interaction` / `build_replay_text`  |
 | `claude_otel_session_scorer/human_signals.py`          | Deterministic friction signals. Pure-Python `compute_friction_score` mirrors the SQL formula                  |
@@ -111,8 +110,6 @@ poetry run score_human_signals \
   --silver-schema my_catalog.claude_silver \
   --gold-schema   my_catalog.claude_gold
 ```
-
-The `claude_otel_session_scorer` console script (`main.py`) is a small utility that scans and prints any Unity Catalog table — handy for ad-hoc inspection.
 
 ### Databricks
 

@@ -52,8 +52,6 @@ poetry run score_human_signals \
   --gold-schema my_catalog.claude_gold
 ```
 
-The `claude_otel_session_scorer` console script (`main.py`) is a small utility that scans and prints any Unity Catalog table — handy for ad-hoc inspection.
-
 ### Deploy to Databricks
 
 The `databricks.yml` Asset Bundle defines a daily-at-1am-UTC job (`Claude OTEL Pipeline`) with `silver_etl` followed by `score_sessions` and `score_human_signals` running in parallel.
@@ -72,7 +70,6 @@ Schemas are passed as job parameters (`bronze_schema`, `silver_schema`, `gold_sc
 
 | File                                              | Purpose                                                                                       |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `claude_otel_session_scorer/main.py`              | `claude_otel_session_scorer` CLI: scan-table utility + shared `create_spark_session()`         |
 | `claude_otel_session_scorer/silver_etl.py`        | Bronze→silver ETL: builds `session_summary`, `session_events`, `session_metrics`               |
 | `claude_otel_session_scorer/scorer.py`            | Silver→gold LLM-as-judge: replay compression, prompt build, `ai_query`, immutable scores       |
 | `claude_otel_session_scorer/human_signals.py`     | Silver→gold deterministic friction signals (reject/abort/correction). Recomputable.            |
