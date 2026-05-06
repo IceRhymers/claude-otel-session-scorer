@@ -207,7 +207,44 @@ def run_scoring(
     replay_char_budget: int = _REPLAY_CHAR_BUDGET,
     keep_interactions: int = _KEEP_INTERACTIONS,
 ) -> None:
-    """Run the full incremental scoring pipeline: discover → replay → score → judge → merge."""
+    """Run the full incremental scoring pipeline: discover → replay → score → judge → merge.
+
+    Two-stage scoring architecture
+    --------------------------------
+    This pipeline uses **two separate, intentionally different** scoring schemes that operate
+    as sequential stages — not duplicates of each other.
+
+    **Stage 1 — LLM-judge dimensions** (see ``_build_prompt_udf``):
+    The LLM is asked to grade the session on five dimensions (0-100 each):
+
+    - ``task_clarity`` (15% guidance weight in the prompt)
+    - ``agent_effectiveness`` (25%)
+    - ``tool_strategy`` (25%)
+    - ``error_handling`` (15%)
+    - ``cost_efficiency`` (20%)
+
+    These percentage hints appear in the prompt to steer the LLM's attention; they do *not*
+    feed directly into the final score.  The LLM also returns an ``overall_score`` and
+    free-text ``summary`` / ``recommendations``.  All seven fields are stored with an
+    ``llm_`` prefix in ``gold.session_scores`` (e.g. ``llm_task_clarity``).
+
+    **Stage 2 — Rule-based composite score** (see the ``composite_score`` column below):
+    A deterministic formula combines five *rule-computed* signals derived from silver metrics
+    (not the LLM grades above) using its own weighting scheme:
+
+    - ``efficiency_score``   × 0.20  (cache hit rate + cost per interaction)
+    - ``productivity_score`` × 0.25  (tool calls per interaction + interaction depth)
+    - ``quality_score``      × 0.20  (tool success rate + visible error penalty)
+    - ``autonomy_score``     × 0.15  (auto-accept rate)
+    - ``engagement_score``   × 0.20  (session duration + average prompt length)
+
+    These are structural signals from the OTEL trace data, not the LLM's subjective grades.
+    The weights differ from the prompt hints because they reflect orthogonal design goals.
+
+    If these two sets of dimensions look inconsistent — they are intentionally so.  Do not
+    "fix" them to match.  The LLM grades and the composite score are complementary views of
+    session quality produced by separate stages of the same pipeline.
+    """
     silver_summary = f"{silver_schema}.session_summary"
     silver_events = f"{silver_schema}.session_events"
     gold_scores = f"{gold_schema}.session_scores"
