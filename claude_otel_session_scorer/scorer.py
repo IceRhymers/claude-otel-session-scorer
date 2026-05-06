@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 import os
 from argparse import ArgumentParser
-from datetime import datetime, timezone
-
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType
@@ -315,7 +313,7 @@ def run_scoring(
         F.col("judgment.overall_score").alias("llm_overall_score"),
         F.col("judgment.summary").alias("llm_summary"),
         F.col("judgment.recommendations").alias("llm_recommendations"),
-        F.lit(datetime.now(timezone.utc)).cast("timestamp").alias("scored_at"),
+        F.current_timestamp().alias("scored_at"),
     )
     gold_df = gold_df.filter(F.col("llm_overall_score").isNotNull())
 

@@ -11,8 +11,6 @@ from __future__ import annotations
 import logging
 import os
 from argparse import ArgumentParser
-from datetime import datetime, timezone
-
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
@@ -182,7 +180,7 @@ def run_human_signals(
         )
         .withColumn(
             "computed_at",
-            F.lit(datetime.now(timezone.utc)).cast("timestamp"),
+            F.current_timestamp(),
         )
         .select(
             "session_id",
@@ -233,7 +231,7 @@ def run_human_signals(
         )
         .withColumn(
             "computed_at",
-            F.lit(datetime.now(timezone.utc)).cast("timestamp"),
+            F.current_timestamp(),
         )
         .select(
             "session_id",
