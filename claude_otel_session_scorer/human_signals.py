@@ -19,7 +19,8 @@ from pyspark.sql.window import Window
 
 logger = logging.getLogger(__name__)
 
-# v1: tunable. Window for "USER_PROMPT after TOOL_RESULT counts as a correction."
+# Window for "USER_PROMPT after TOOL_RESULT counts as a correction."
+# 30 seconds is the detection threshold; the predicate is boundary-inclusive (<=).
 _CORRECTION_WINDOW_SECONDS = 30
 
 
@@ -111,8 +112,12 @@ def run_human_signals(
     )
 
     # --- per-session corrections via deterministic window ------------------
+    # event_ts has integer-second precision; monotonically_increasing_id() is
+    # a stable intra-plan tiebreaker for same-second events.
     correction_window = Window.partitionBy("session_id").orderBy(
-        F.col("event_ts").asc(), F.col("event_type").asc()
+        F.col("event_ts").asc(),
+        F.col("event_type").asc(),
+        F.monotonically_increasing_id().asc(),
     )
     flagged = events.withColumn(
         "_prev_event_type", F.lag("event_type").over(correction_window)
