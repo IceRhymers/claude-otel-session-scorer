@@ -112,14 +112,8 @@ def run_human_signals(
     )
 
     # --- per-session corrections via deterministic window ------------------
-    # event_ts carries only integer-second precision (truncated from the log
-    # attribute timestamp), so same-second events must be ordered by a stable
-    # tiebreaker. We cannot rely on event_type alphabetical order — while
-    # "TOOL_RESULT" < "USER_PROMPT" happens to work today, a future rename
-    # would silently invert the ordering and break correction detection.
-    # monotonically_increasing_id() is not reproducible across runs but IS
-    # stable within a single Spark query plan, making it a safe intra-run
-    # tiebreaker that prevents accidental alphabetical dependence.
+    # event_ts has integer-second precision; monotonically_increasing_id() is
+    # a stable intra-plan tiebreaker for same-second events.
     correction_window = Window.partitionBy("session_id").orderBy(
         F.col("event_ts").asc(),
         F.col("event_type").asc(),
