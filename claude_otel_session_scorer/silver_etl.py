@@ -1,3 +1,5 @@
+import logging
+import os
 from argparse import ArgumentParser
 
 from pyspark.sql import DataFrame, SparkSession
@@ -5,6 +7,8 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
 from claude_otel_session_scorer._spark import create_spark_session
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_event_attr(attr_key: str):
@@ -18,11 +22,8 @@ def _ensure_table_with_clustering(spark: SparkSession, full_table_name: str, df:
         )
 
 
-def _build_session_summary(
-    spark: SparkSession, bronze_traces: str, bronze_metrics: str
-) -> DataFrame:
+def _build_session_summary(spark: SparkSession, bronze_traces: str) -> DataFrame:
     traces = spark.table(bronze_traces)
-    metrics = spark.table(bronze_metrics)
 
     interactions = (
         traces.filter(F.col("name") == "claude_code.interaction")
@@ -93,24 +94,11 @@ def _build_session_summary(
             ).alias("auto_accepted"),
         )
     )
-    cost = (
-        metrics.filter(F.col("name") == "claude_code.cost.usage")
-        .groupBy(F.col("sum.attributes").getItem("session.id").alias("session_id"))
-        .agg(F.sum("sum.value").alias("total_cost_usd"))
-    )
-    active_time = (
-        metrics.filter(F.col("name") == "claude_code.active_time.total")
-        .groupBy(F.col("sum.attributes").getItem("session.id").alias("session_id"))
-        .agg(F.sum("sum.value").alias("total_active_time_s"))
-    )
-
     return (
         interactions.join(llm_stats, "session_id", "left")
         .join(tool_stats, "session_id", "left")
         .join(tool_exec, "session_id", "left")
         .join(autonomy, "session_id", "left")
-        .join(cost, "session_id", "left")
-        .join(active_time, "session_id", "left")
         .withColumn(
             "session_duration_s",
             F.unix_timestamp("session_end") - F.unix_timestamp("session_start"),
@@ -175,8 +163,6 @@ def _build_session_summary(
             "tools_per_interaction",
             "llm_calls_per_interaction",
             "avg_prompt_length",
-            "total_cost_usd",
-            "total_active_time_s",
             "service_version",
             "os_type",
             "terminal_type",
@@ -490,31 +476,7 @@ def run_silver_etl(
 
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {silver_schema}")
 
-    # session_summary — MERGE
-    summary_df = _build_session_summary(spark, bronze_traces, bronze_metrics)
-    _ensure_table_with_clustering(spark, silver_summary, summary_df)
-    summary_df.createOrReplaceTempView("session_summary_updates")
-    spark.sql(f"""
-        MERGE INTO {silver_summary} AS target
-        USING session_summary_updates AS source
-        ON target.session_id = source.session_id
-        WHEN MATCHED THEN UPDATE SET *
-        WHEN NOT MATCHED THEN INSERT *
-    """)
-    print(f"✔ {silver_summary}: {spark.table(silver_summary).count()} sessions")
-
-    # session_events — delete-then-append per session
-    events_df = _build_session_events(spark, bronze_traces, bronze_logs)
-    _ensure_table_with_clustering(spark, silver_events, events_df)
-    events_df.createOrReplaceTempView("session_events_updates")
-    events_df.select("session_id").distinct().createOrReplaceTempView("incoming_session_ids")
-    spark.sql(
-        f"DELETE FROM {silver_events} WHERE session_id IN (SELECT session_id FROM incoming_session_ids)"
-    )
-    events_df.write.mode("append").option("mergeSchema", "true").saveAsTable(silver_events)
-    print(f"✔ {silver_events}: {spark.table(silver_events).count()} events")
-
-    # session_metrics — MERGE
+    # session_metrics — built first so summary can derive cost/active_time from it (single source)
     metrics_df = _build_session_metrics(spark, bronze_metrics)
     _ensure_table_with_clustering(spark, silver_metrics, metrics_df)
     metrics_df.createOrReplaceTempView("session_metrics_updates")
@@ -525,7 +487,37 @@ def run_silver_etl(
         WHEN MATCHED THEN UPDATE SET *
         WHEN NOT MATCHED THEN INSERT *
     """)
-    print(f"✔ {silver_metrics}: {spark.table(silver_metrics).count()} sessions")
+    logger.info("Wrote session_metrics: %s", silver_metrics)
+
+    # session_summary — join cost/active_time from session_metrics (avoids double aggregation)
+    summary_df = _build_session_summary(spark, bronze_traces)
+    cost_active = metrics_df.select(
+        "session_id",
+        "total_cost_usd",
+        (F.col("active_time_cli_s") + F.col("active_time_user_s")).alias("total_active_time_s"),
+    )
+    summary_df = summary_df.join(cost_active, "session_id", "left")
+    _ensure_table_with_clustering(spark, silver_summary, summary_df)
+    summary_df.createOrReplaceTempView("session_summary_updates")
+    spark.sql(f"""
+        MERGE INTO {silver_summary} AS target
+        USING session_summary_updates AS source
+        ON target.session_id = source.session_id
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+    """)
+    logger.info("Wrote session_summary: %s", silver_summary)
+
+    # session_events — delete-then-append per session
+    events_df = _build_session_events(spark, bronze_traces, bronze_logs)
+    _ensure_table_with_clustering(spark, silver_events, events_df)
+    events_df.createOrReplaceTempView("session_events_updates")
+    events_df.select("session_id").distinct().createOrReplaceTempView("incoming_session_ids")
+    spark.sql(
+        f"DELETE FROM {silver_events} WHERE session_id IN (SELECT session_id FROM incoming_session_ids)"
+    )
+    events_df.write.mode("append").option("mergeSchema", "true").saveAsTable(silver_events)
+    logger.info("Wrote session_events: %s", silver_events)
 
 
 def main() -> None:
@@ -548,7 +540,8 @@ def main() -> None:
     try:
         run_silver_etl(spark, args.bronze_schema, args.silver_schema)
     finally:
-        spark.stop()
+        if os.environ.get("DATABRICKS_RUNTIME_VERSION") is None:
+            spark.stop()
 
 
 if __name__ == "__main__":
