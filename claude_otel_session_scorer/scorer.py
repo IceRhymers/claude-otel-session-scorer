@@ -212,16 +212,17 @@ def run_scoring(
     silver_events = f"{silver_schema}.session_events"
     gold_scores = f"{gold_schema}.session_scores"
 
-    # 2-hour idle gap heuristic — not a true completion signal. Sessions resuming after >2h are treated as new.
-    # (See module docstring for full implications.)
+    # 2-hour idle gap heuristic — not a true completion signal.
+    # Sessions resuming after >2h are treated as new. (See module docstring.)
     completed_sessions_df = spark.table(silver_summary).filter(
         F.col("session_end") < F.current_timestamp() - F.expr("INTERVAL 2 HOURS")
     )
 
     if spark.catalog.tableExists(gold_scores):
         existing = spark.table(gold_scores).select("session_id")
+        # Immutability guard: sessions already scored are excluded. See module docstring.
         new_sessions_df = completed_sessions_df.select("session_id").join(
-            existing, "session_id", "left_anti"  # Immutability guard: sessions already scored are excluded. See module docstring.
+            existing, "session_id", "left_anti"
         )
     else:
         new_sessions_df = completed_sessions_df.select("session_id")
