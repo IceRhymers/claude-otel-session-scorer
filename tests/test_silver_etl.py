@@ -1,94 +1,71 @@
-"""
-Tests for the silver_etl module
+"""Tests for the silver_etl module.
+
+Most invariants are exercised behaviorally against an in-process Delta-enabled
+SparkSession (see `tests/conftest.py`). A handful of mock-based tests remain
+for things that are genuinely shape-only — DDL emitted, MERGE keying, and the
+`main()` entry-point wiring — and could not be more strongly tested by
+running the pipeline.
 """
 
-import inspect
+from __future__ import annotations
+
 import os
 from unittest.mock import MagicMock, patch
 
-from claude_otel_session_scorer import silver_etl
+import pytest
+
 from claude_otel_session_scorer.silver_etl import main, run_silver_etl
+from tests.conftest import _make_mock_spark, _sql_calls
 
 
-def _make_mock_spark():
-    spark = MagicMock()
-    # spark.table() returns a MagicMock that supports arbitrarily chained DataFrame ops
-    df = MagicMock()
-    spark.table.return_value = df
-    return spark
+# ---------------------------------------------------------------------------
+# Mock-only tests — DDL shape, MERGE keying, and entry-point wiring.
+# ---------------------------------------------------------------------------
 
 
-def _sql_calls(spark):
-    return [c.args[0].strip() for c in spark.sql.call_args_list]
+def test_run_silver_etl_calls_schema_create(spark):
+    # `spark` fixture is requested only to keep a real SparkContext alive —
+    # `F.col(...)` calls inside `run_silver_etl` need one even though every
+    # other interaction here goes through the MagicMock.
+    del spark
+    mock_spark = _make_mock_spark()
+    run_silver_etl(mock_spark, "cat.src", "cat.tgt")
+    assert any("CREATE SCHEMA IF NOT EXISTS cat.tgt" in s for s in _sql_calls(mock_spark))
 
 
-def test_run_silver_etl_calls_schema_create():
-    spark = _make_mock_spark()
-    run_silver_etl(spark, "cat.src", "cat.tgt")
-    assert any("CREATE SCHEMA IF NOT EXISTS cat.tgt" in s for s in _sql_calls(spark))
-
-
-def test_session_summary_merge():
-    spark = _make_mock_spark()
-    run_silver_etl(spark, "cat.src", "cat.tgt")
-    merge_calls = [s for s in _sql_calls(spark) if "MERGE INTO cat.tgt.session_summary" in s]
+def test_session_summary_merge(spark):
+    del spark
+    mock_spark = _make_mock_spark()
+    run_silver_etl(mock_spark, "cat.src", "cat.tgt")
+    merge_calls = [s for s in _sql_calls(mock_spark) if "MERGE INTO cat.tgt.session_summary" in s]
     assert len(merge_calls) == 1
     assert "WHEN MATCHED THEN UPDATE SET *" in merge_calls[0]
     assert "WHEN NOT MATCHED THEN INSERT *" in merge_calls[0]
 
 
-def test_session_events_delete_then_append():
-    spark = _make_mock_spark()
-    # Capture the DataFrame returned from the final unionByName chain so we can
-    # check that .write.mode("append").saveAsTable(...) was called on it.
-    run_silver_etl(spark, "cat.src", "cat.tgt")
+def test_session_events_delete_then_append(spark):
+    del spark
+    mock_spark = _make_mock_spark()
+    run_silver_etl(mock_spark, "cat.src", "cat.tgt")
 
-    delete_calls = [s for s in _sql_calls(spark) if "DELETE FROM cat.tgt.session_events" in s]
+    delete_calls = [s for s in _sql_calls(mock_spark) if "DELETE FROM cat.tgt.session_events" in s]
     assert len(delete_calls) == 1
 
     # Verify saveAsTable was invoked with the silver events table name somewhere
     # in the MagicMock call graph (write.mode("append").saveAsTable).
-    # Because the chained MagicMock records every call, we walk call_args_list of
-    # all mock children to find saveAsTable("cat.tgt.session_events").
-    all_calls = str(spark.mock_calls)
+    all_calls = str(mock_spark.mock_calls)
     assert "saveAsTable" in all_calls
     assert "cat.tgt.session_events" in all_calls
 
 
-def test_session_metrics_merge():
-    spark = _make_mock_spark()
-    run_silver_etl(spark, "cat.src", "cat.tgt")
-    merge_calls = [s for s in _sql_calls(spark) if "MERGE INTO cat.tgt.session_metrics" in s]
+def test_session_metrics_merge(spark):
+    del spark
+    mock_spark = _make_mock_spark()
+    run_silver_etl(mock_spark, "cat.src", "cat.tgt")
+    merge_calls = [s for s in _sql_calls(mock_spark) if "MERGE INTO cat.tgt.session_metrics" in s]
     assert len(merge_calls) == 1
     assert "WHEN MATCHED THEN UPDATE SET *" in merge_calls[0]
     assert "WHEN NOT MATCHED THEN INSERT *" in merge_calls[0]
-
-
-def test_session_events_includes_prompt_id_column():
-    src = inspect.getsource(silver_etl._build_session_events)
-    # All seven event projections must alias a prompt_id column.
-    assert src.count('alias("prompt_id")') >= 6
-    # And the tool_decision arm should source it from attributes.getItem("prompt.id").
-    assert 'getItem("prompt.id")' in src
-
-
-def test_session_events_includes_tool_use_id_column():
-    src = inspect.getsource(silver_etl._build_session_events)
-    assert src.count('alias("tool_use_id")') >= 6
-    assert 'getItem("tool_use_id")' in src
-
-
-def test_session_events_includes_decision_source_column():
-    src = inspect.getsource(silver_etl._build_session_events)
-    assert src.count('alias("decision_source")') >= 6
-    # The tool_decision arm sources it from attributes.getItem("source").
-    assert 'getItem("source").alias("decision_source")' in src
-
-
-def test_session_events_append_uses_merge_schema():
-    src = inspect.getsource(silver_etl.run_silver_etl)
-    assert '.option("mergeSchema", "true")' in src
-    assert ".saveAsTable(silver_events)" in src
 
 
 def test_main_creates_spark_and_stops():
@@ -134,11 +111,12 @@ def test_main_does_not_stop_spark_inside_databricks():
         mock_spark.stop.assert_not_called()
 
 
-def test_session_metrics_written_before_summary():
+def test_session_metrics_written_before_summary(spark):
     """session_metrics must be merged before session_summary so summary can join cost/active_time."""
-    spark = _make_mock_spark()
-    run_silver_etl(spark, "cat.src", "cat.tgt")
-    sql_calls = _sql_calls(spark)
+    del spark
+    mock_spark = _make_mock_spark()
+    run_silver_etl(mock_spark, "cat.src", "cat.tgt")
+    sql_calls = _sql_calls(mock_spark)
     metrics_pos = next(
         i for i, s in enumerate(sql_calls) if "MERGE INTO cat.tgt.session_metrics" in s
     )
@@ -148,12 +126,316 @@ def test_session_metrics_written_before_summary():
     assert metrics_pos < summary_pos, "session_metrics MERGE must precede session_summary MERGE"
 
 
-def test_summary_derives_cost_and_active_time_from_metrics():
-    """run_silver_etl must join cost/active_time from metrics_df rather than re-aggregating."""
-    src = inspect.getsource(silver_etl.run_silver_etl)
-    # The summary builder should no longer receive bronze_metrics
-    assert "_build_session_summary(spark, bronze_traces)" in src
-    # cost and active_time must be derived via a join from the metrics DataFrame
-    assert "active_time_cli_s" in src
-    assert "active_time_user_s" in src
-    assert "total_active_time_s" in src
+# ---------------------------------------------------------------------------
+# Behavioral tests against a real in-process SparkSession. Every test below
+# uses the `spark`, `bronze_schema`, `silver_schema`, and `make_bronze_tables`
+# fixtures from `tests/conftest.py`.
+#
+# `_all_projection_bronze()` returns a single 6-row bronze fixture (1 trace +
+# 5 logs) that drives all six silver event projections. The first three
+# behavioral tests reuse it so the union-compatibility contract is exercised
+# end-to-end on every assertion: if any projection diverged in column list or
+# type, `unionByName` would fail before a single assertion ran.
+# ---------------------------------------------------------------------------
+
+
+def _all_projection_bronze():
+    """(traces, logs) covering all six silver event projections.
+
+    USER_PROMPT, LLM_CALL, TOOL_DECISION, TOOL_RESULT, and ERROR originate
+    from logs; TOOL_CALL originates from a `claude_code.tool` trace. Every
+    row is for `session.id="s1"` so a single run materializes one row per
+    event_type into `silver.session_events`.
+    """
+    traces = [
+        {
+            "name": "claude_code.tool",
+            "attributes": {
+                "session.id": "s1",
+                "tool_name": "Bash",
+                "tool_use_id": "tu-call",
+            },
+        }
+    ]
+    logs = [
+        {
+            "body": "claude_code.user_prompt",
+            "attributes": {
+                "session.id": "s1",
+                "prompt.id": "p-user",
+                "prompt": "hi",
+            },
+        },
+        {
+            "body": "claude_code.api_request",
+            "attributes": {
+                "session.id": "s1",
+                "prompt.id": "p-llm",
+                "model": "sonnet",
+                "input_tokens": "10",
+                "output_tokens": "5",
+                "cache_read_tokens": "0",
+            },
+        },
+        {
+            "body": "claude_code.tool_decision",
+            "attributes": {
+                "session.id": "s1",
+                "prompt.id": "p-dec",
+                "tool_name": "Bash",
+                "tool_use_id": "tu-dec",
+                "decision": "accept",
+                "source": "config",
+            },
+        },
+        {
+            "body": "claude_code.tool_result",
+            "attributes": {
+                "session.id": "s1",
+                "prompt.id": "p-res",
+                "tool_name": "Bash",
+                "tool_use_id": "tu-res",
+            },
+        },
+        {
+            "body": "claude_code.api_error",
+            "attributes": {
+                "session.id": "s1",
+                "prompt.id": "p-err",
+                "error": "boom",
+            },
+        },
+    ]
+    return traces, logs
+
+
+def _events_by_type(spark, silver_schema):
+    rows = spark.table(f"{silver_schema}.session_events").collect()
+    return {r.event_type: r for r in rows}
+
+
+# AGENTS.md §3 silver-events six-projection union rule: every projection must
+# emit a `prompt_id` column. Log-driven projections source it from
+# `attributes.getItem("prompt.id")`; the trace-driven TOOL_CALL projection
+# explicitly NULLs it to keep prompt provenance log-only.
+def test_silver_events_carry_prompt_id_across_all_projections(
+    spark, bronze_schema, silver_schema, make_bronze_tables
+):
+    traces, logs = _all_projection_bronze()
+    make_bronze_tables(traces=traces, logs=logs)
+
+    run_silver_etl(spark, bronze_schema, silver_schema)
+
+    rows = _events_by_type(spark, silver_schema)
+    assert set(rows.keys()) == {
+        "USER_PROMPT",
+        "LLM_CALL",
+        "TOOL_CALL",
+        "TOOL_DECISION",
+        "TOOL_RESULT",
+        "ERROR",
+    }
+    assert rows["USER_PROMPT"].prompt_id == "p-user"
+    assert rows["LLM_CALL"].prompt_id == "p-llm"
+    # TOOL_CALL trace projection emits prompt_id as NULL (silver_etl L249).
+    assert rows["TOOL_CALL"].prompt_id is None
+    assert rows["TOOL_DECISION"].prompt_id == "p-dec"
+    assert rows["TOOL_RESULT"].prompt_id == "p-res"
+    assert rows["ERROR"].prompt_id == "p-err"
+
+
+# AGENTS.md §3 silver-events six-projection union rule: every projection must
+# emit a `tool_use_id` column. Only the three tool-shaped projections
+# (TOOL_CALL, TOOL_DECISION, TOOL_RESULT) populate it; the others must emit
+# the column as NULL so `unionByName` succeeds.
+def test_silver_events_carry_tool_use_id_for_tool_projections(
+    spark, bronze_schema, silver_schema, make_bronze_tables
+):
+    traces, logs = _all_projection_bronze()
+    make_bronze_tables(traces=traces, logs=logs)
+
+    run_silver_etl(spark, bronze_schema, silver_schema)
+
+    rows = _events_by_type(spark, silver_schema)
+    assert rows["TOOL_CALL"].tool_use_id == "tu-call"
+    assert rows["TOOL_DECISION"].tool_use_id == "tu-dec"
+    assert rows["TOOL_RESULT"].tool_use_id == "tu-res"
+    assert rows["USER_PROMPT"].tool_use_id is None
+    assert rows["LLM_CALL"].tool_use_id is None
+    assert rows["ERROR"].tool_use_id is None
+
+
+# AGENTS.md §3 silver-events six-projection union rule: `decision_source` is
+# emitted by every projection (so `unionByName` succeeds) but is non-null only
+# on the TOOL_DECISION projection, sourced from `attributes.getItem("source")`.
+def test_silver_events_decision_source_only_on_tool_decision(
+    spark, bronze_schema, silver_schema, make_bronze_tables
+):
+    traces, logs = _all_projection_bronze()
+    make_bronze_tables(traces=traces, logs=logs)
+
+    run_silver_etl(spark, bronze_schema, silver_schema)
+
+    rows = _events_by_type(spark, silver_schema)
+    assert rows["TOOL_DECISION"].decision_source == "config"
+    for event_type in ("USER_PROMPT", "LLM_CALL", "TOOL_CALL", "TOOL_RESULT", "ERROR"):
+        assert rows[event_type].decision_source is None, (
+            f"decision_source must be NULL on {event_type}"
+        )
+
+
+# AGENTS.md §3 invariant 7: `silver_events` write uses `mergeSchema=true` with
+# `saveAsTable(..., mode="append")`. Pre-create the table with a strict-subset
+# schema (no `decision_source`, no `error_category`) and a baseline row for a
+# different session, then run silver_etl. The append must (a) succeed via
+# schema evolution, (b) populate the new column on the freshly-written row,
+# and (c) leave the baseline row for the other session intact (per-session
+# delete-then-append, not table-wide truncate).
+def test_silver_events_append_evolves_schema_via_merge(
+    spark, bronze_schema, silver_schema, make_bronze_tables
+):
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {silver_schema}")
+    spark.sql(
+        f"""
+        CREATE TABLE {silver_schema}.session_events (
+            session_id STRING,
+            event_ts TIMESTAMP,
+            event_type STRING,
+            detail_name STRING,
+            duration_ms DOUBLE,
+            input_tokens LONG,
+            output_tokens LONG,
+            cost_usd DOUBLE,
+            success STRING,
+            content_preview STRING,
+            full_content STRING,
+            event_source STRING,
+            model STRING,
+            tool_name STRING,
+            prompt_id STRING,
+            tool_use_id STRING
+        ) USING DELTA
+        """
+    )
+    spark.sql(
+        f"""
+        INSERT INTO {silver_schema}.session_events VALUES (
+            'other',
+            TIMESTAMP '2025-01-01 00:00:00',
+            'USER_PROMPT',
+            '',
+            CAST(NULL AS DOUBLE),
+            CAST(NULL AS BIGINT),
+            CAST(NULL AS BIGINT),
+            CAST(NULL AS DOUBLE),
+            CAST(NULL AS STRING),
+            '',
+            CAST(NULL AS STRING),
+            'log',
+            CAST(NULL AS STRING),
+            CAST(NULL AS STRING),
+            CAST(NULL AS STRING),
+            CAST(NULL AS STRING)
+        )
+        """
+    )
+
+    make_bronze_tables(
+        logs=[
+            {
+                "body": "claude_code.tool_decision",
+                "attributes": {
+                    "session.id": "s1",
+                    "prompt.id": "p-dec",
+                    "tool_name": "Bash",
+                    "tool_use_id": "tu-dec",
+                    "decision": "accept",
+                    "source": "config",
+                },
+            }
+        ],
+    )
+
+    run_silver_etl(spark, bronze_schema, silver_schema)
+
+    columns = set(spark.table(f"{silver_schema}.session_events").columns)
+    # mergeSchema=true must have evolved the table to add both omitted columns.
+    assert {"decision_source", "error_category"}.issubset(columns)
+
+    rows = spark.table(f"{silver_schema}.session_events").collect()
+    by_session = {r.session_id: r for r in rows}
+    # Baseline row for "other" survived: the per-session DELETE only targets
+    # incoming session_ids (s1), and the write is an append, not an overwrite.
+    assert "other" in by_session
+    # The s1 TOOL_DECISION row was written and the new column populated.
+    assert by_session["s1"].event_type == "TOOL_DECISION"
+    assert by_session["s1"].decision_source == "config"
+
+
+# AGENTS.md §3 single-source-of-truth rule for cost/active_time: `summary`
+# derives `total_active_time_s` and `total_cost_usd` by left-joining
+# `session_metrics`, not by re-aggregating bronze. Active time only exists on
+# `claude_code.active_time.total` metrics — there is no equivalent column on
+# bronze traces — so a non-zero answer can only come from the metrics join.
+# Left-join semantics also mean a session that's in traces but missing from
+# metrics still produces a summary row, with NULL aggregates.
+def test_summary_joins_total_active_time_and_cost_from_metrics(
+    spark, bronze_schema, silver_schema, make_bronze_tables
+):
+    base_ns = 1_735_689_600 * 1_000_000_000  # 2025-01-01T00:00:00Z
+    second_ns = 1_000_000_000
+    make_bronze_tables(
+        traces=[
+            {
+                "name": "claude_code.interaction",
+                "attributes": {"session.id": "s1"},
+                "start_time_unix_nano": base_ns,
+                "end_time_unix_nano": base_ns + 60 * second_ns,
+            },
+            {
+                "name": "claude_code.interaction",
+                "attributes": {"session.id": "s2"},
+                "start_time_unix_nano": base_ns,
+                "end_time_unix_nano": base_ns + 30 * second_ns,
+            },
+        ],
+        metrics=[
+            {
+                "name": "claude_code.active_time.total",
+                "sum": {"value": 10.0, "attributes": {"session.id": "s1", "type": "cli"}},
+            },
+            {
+                "name": "claude_code.active_time.total",
+                "sum": {"value": 25.0, "attributes": {"session.id": "s1", "type": "user"}},
+            },
+            {
+                "name": "claude_code.cost.usage",
+                "sum": {
+                    "value": 0.42,
+                    "attributes": {
+                        "session.id": "s1",
+                        "model": "sonnet",
+                        "effort": "high",
+                    },
+                },
+            },
+        ],
+    )
+
+    run_silver_etl(spark, bronze_schema, silver_schema)
+
+    summary = spark.table(f"{silver_schema}.session_summary")
+    rows = {r.session_id: r for r in summary.collect()}
+    assert set(rows.keys()) == {"s1", "s2"}
+    # 10.0 + 25.0 = 35.0 — the only source for cli/user breakdowns is the
+    # metrics-table join, so this answer pins the join as the source.
+    assert rows["s1"].total_active_time_s == pytest.approx(35.0)
+    assert rows["s1"].total_cost_usd == pytest.approx(0.42)
+    # Left-join semantics: s2 has no metrics, so the summary row exists but
+    # the joined aggregates are NULL.
+    assert rows["s2"].total_active_time_s is None
+    assert rows["s2"].total_cost_usd is None
+    # Per-bucket columns belong on `session_metrics`, not on summary —
+    # confirms the summary projection only takes the derived total column.
+    assert "active_time_cli_s" not in summary.columns
+    assert "active_time_user_s" not in summary.columns
