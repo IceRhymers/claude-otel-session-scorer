@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from claude_otel_session_scorer import human_signals
 from claude_otel_session_scorer.human_signals import (
     _CORRECTION_WINDOW_SECONDS,
+    _SCORE_WEIGHTS,
     compute_friction_score,
     main,
     run_human_signals,
@@ -213,3 +214,37 @@ def test_no_udfs_or_ai_query():
     assert "@F.udf" not in src
     assert "_build_replay_udf" not in src
     assert "_build_prompt_udf" not in src
+
+
+def test_score_weights_single_source_of_truth():
+    # _SCORE_WEIGHTS is the authoritative dict; Python helper and SQL must derive from it.
+    assert _SCORE_WEIGHTS["reject"] == 0.4
+    assert _SCORE_WEIGHTS["abort"] == 0.3
+    assert _SCORE_WEIGHTS["correction"] == 0.3
+    assert abs(sum(_SCORE_WEIGHTS.values()) - 1.0) < 1e-9, "weights must sum to 1"
+    # Both the Python function and SQL expression must reference _SCORE_WEIGHTS, not literals.
+    py_src = inspect.getsource(compute_friction_score)
+    assert '_SCORE_WEIGHTS["reject"]' in py_src
+    assert '_SCORE_WEIGHTS["abort"]' in py_src
+    assert '_SCORE_WEIGHTS["correction"]' in py_src
+    sql_src = inspect.getsource(run_human_signals)
+    assert "_SCORE_WEIGHTS['reject']" in sql_src or '_SCORE_WEIGHTS["reject"]' in sql_src
+
+
+def test_event_ts_sec_materialized_before_lag():
+    # event_ts_sec must be a WithColumn before the lag to avoid double-casting.
+    src = inspect.getsource(run_human_signals)
+    assert "event_ts_sec" in src
+    assert '"event_ts_sec"' in src or "'event_ts_sec'" in src
+    # The predicate must use the materialized column, not inline casts.
+    assert 'event_ts").cast("long") - F.col("_prev_event_ts").cast("long")' not in src
+
+
+def test_by_tool_join_is_inner():
+    # Per-tool rows only make sense for sessions in session_keys (completed sessions).
+    src = inspect.getsource(run_human_signals)
+    # The by_tool join must be "inner", not "left".
+    assert '"inner"' in src
+    # Confirm the old incorrect "left" join for by_tool is gone by checking
+    # that the by_tool join line uses "inner".
+    assert 'session_keys.select("session_id", "user_id"), "session_id", "inner"' in src
