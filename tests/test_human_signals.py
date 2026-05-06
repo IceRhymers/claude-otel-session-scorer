@@ -142,11 +142,16 @@ def test_correction_window_35s_not_counted():
 
 
 def test_num_corrections_deterministic_under_ts_ties():
-    # Window must order on (event_ts, event_type) for a stable tie-breaker.
+    # Window must order on (event_ts, event_type, monotonically_increasing_id)
+    # for a stable tiebreaker. event_ts has only integer-second precision, so
+    # same-second ties must be broken explicitly rather than relying on
+    # alphabetical event_type ordering (which would silently break if an event
+    # type were renamed).
     src = inspect.getsource(run_human_signals)
     assert "orderBy(" in src
     assert '"event_ts"' in src
     assert '"event_type"' in src
+    assert "monotonically_increasing_id" in src
     # Both orderBy keys must appear in the same Window.partitionBy call.
     assert 'partitionBy("session_id")' in src or "partitionBy('session_id')" in src
 
