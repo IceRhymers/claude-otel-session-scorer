@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 # 30 seconds is the detection threshold; the predicate is boundary-inclusive (<=).
 _CORRECTION_WINDOW_SECONDS = 30
 
+# Shared weights for the friction-score formula (spec AC#6).
+# Both the pure-Python helper and the SQL expression are derived from this dict
+# so they're guaranteed to stay in sync.
+_SCORE_WEIGHTS = {"reject": 0.4, "abort": 0.3, "correction": 0.3}
+
 
 def compute_friction_score(
     reject_rate: float | None,
@@ -38,7 +43,9 @@ def compute_friction_score(
     if not signal_strength:
         return None
     raw = 100.0 * (
-        0.4 * (reject_rate or 0.0) + 0.3 * (abort_rate or 0.0) + 0.3 * (correction_intensity or 0.0)
+        _SCORE_WEIGHTS["reject"] * (reject_rate or 0.0)
+        + _SCORE_WEIGHTS["abort"] * (abort_rate or 0.0)
+        + _SCORE_WEIGHTS["correction"] * (correction_intensity or 0.0)
     )
     return min(100.0, max(0.0, raw))
 
@@ -107,16 +114,15 @@ def run_human_signals(
         F.col("event_type").asc(),
         F.monotonically_increasing_id().asc(),
     )
-    flagged = events.withColumn(
-        "_prev_event_type", F.lag("event_type").over(correction_window)
-    ).withColumn("_prev_event_ts", F.lag("event_ts").over(correction_window))
+    flagged = (
+        events.withColumn("event_ts_sec", F.col("event_ts").cast("long"))
+        .withColumn("_prev_event_type", F.lag("event_type").over(correction_window))
+        .withColumn("_prev_event_ts_sec", F.lag("event_ts_sec").over(correction_window))
+    )
     correction_counts = (
         flagged.filter(F.col("event_type") == "USER_PROMPT")
         .filter(F.col("_prev_event_type") == "TOOL_RESULT")
-        .filter(
-            F.col("event_ts").cast("long") - F.col("_prev_event_ts").cast("long")
-            <= _CORRECTION_WINDOW_SECONDS
-        )
+        .filter(F.col("event_ts_sec") - F.col("_prev_event_ts_sec") <= _CORRECTION_WINDOW_SECONDS)
         .groupBy("session_id")
         .agg(F.count("*").alias("num_corrections"))
     )
@@ -167,9 +173,9 @@ def run_human_signals(
             F.expr(
                 "CASE WHEN signal_strength THEN "
                 "LEAST(100.0, GREATEST(0.0, "
-                "100.0 * (0.4 * COALESCE(reject_rate, 0.0) "
-                "+ 0.3 * COALESCE(abort_rate, 0.0) "
-                "+ 0.3 * COALESCE(correction_intensity, 0.0)))) "
+                f"100.0 * ({_SCORE_WEIGHTS['reject']} * COALESCE(reject_rate, 0.0) "
+                f"+ {_SCORE_WEIGHTS['abort']} * COALESCE(abort_rate, 0.0) "
+                f"+ {_SCORE_WEIGHTS['correction']} * COALESCE(correction_intensity, 0.0)))) "
                 "ELSE NULL END"
             ),
         )
@@ -214,7 +220,7 @@ def run_human_signals(
         )
     )
     by_tool = (
-        by_tool_base.join(session_keys.select("session_id", "user_id"), "session_id", "left")
+        by_tool_base.join(session_keys.select("session_id", "user_id"), "session_id", "inner")
         .join(session_metrics, "session_id", "left")
         .withColumn(
             "reject_rate",
