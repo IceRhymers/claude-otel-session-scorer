@@ -7,12 +7,15 @@ This file gives every test access to:
   shape rather than runtime behavior.
 * `spark` — a session-scoped, in-process `SparkSession` configured with the
   Delta extensions, used by the behavioral tests in `test_human_signals.py`.
-* `silver_schema` / `gold_schema` — function-scoped helpers that allocate a
-  fresh database (UUID-suffixed) on the live `spark` and drop it after the
-  test, so each behavioral test runs against hermetic state.
+* `bronze_schema` / `silver_schema` / `gold_schema` — function-scoped helpers
+  that allocate a fresh database (UUID-suffixed) on the live `spark` and drop
+  it after the test, so each behavioral test runs against hermetic state.
 * `make_silver_tables` — convenience factory that materializes the three
   silver tables from in-memory Python rows so each test can spell out only
   the columns it cares about.
+* `make_bronze_tables` — convenience factory that materializes the three
+  bronze OTEL tables (traces / logs / metrics) from in-memory Python rows
+  so silver_etl behavioral tests can drive `run_silver_etl` end-to-end.
 """
 
 from __future__ import annotations
@@ -27,8 +30,10 @@ import pytest
 from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
+    ArrayType,
     DoubleType,
     LongType,
+    MapType,
     StringType,
     StructField,
     StructType,
@@ -112,6 +117,12 @@ def spark(tmp_path_factory: pytest.TempPathFactory) -> Iterable[SparkSession]:
         .config("spark.driver.host", "127.0.0.1")
         .config("spark.ui.enabled", "false")
         .config("spark.sql.shuffle.partitions", "1")
+        # Match Databricks' implicit default: silver_etl's events append uses
+        # `df.write.mode("append").option("mergeSchema", "true").saveAsTable`
+        # without an explicit `.format("delta")`. On Databricks the delta
+        # catalog makes that work; OSS Spark would otherwise pick parquet and
+        # raise a format-mismatch against the existing Delta table.
+        .config("spark.sql.sources.default", "delta")
     )
     session = configure_spark_with_delta_pip(builder).getOrCreate()
     session.sparkContext.setLogLevel("ERROR")
@@ -160,6 +171,16 @@ def _new_schema(spark: SparkSession, prefix: str) -> str:
     name = f"{prefix}_{uuid.uuid4().hex[:8]}"
     spark.sql(f"CREATE DATABASE {name}")
     return name
+
+
+@pytest.fixture
+def bronze_schema(spark: SparkSession) -> Iterable[str]:
+    """Allocate a fresh `bronze_<uuid>` database; drop it after the test."""
+    name = _new_schema(spark, "bronze")
+    try:
+        yield name
+    finally:
+        spark.sql(f"DROP DATABASE IF EXISTS {name} CASCADE")
 
 
 @pytest.fixture
@@ -321,6 +342,140 @@ def make_silver_tables(spark: SparkSession, silver_schema: str):
         ]:
             spark.sql(f"DROP TABLE IF EXISTS {silver_schema}.{table}")
             df.write.format("delta").saveAsTable(f"{silver_schema}.{table}")
+
+    return build
+
+
+# ---------------------------------------------------------------------------
+# Bronze-table builder. Mirror of `make_silver_tables` for the bronze→silver
+# side. Behavioral silver_etl tests pass partial dict rows and this factory
+# fills in the rest of the schema with sensible defaults.
+# ---------------------------------------------------------------------------
+
+
+# Schemas are intentionally a strict subset of `docs/bronze-schema.sql` —
+# only the columns `silver_etl.py` actually reads. If silver_etl ever starts
+# reading a new bronze column, mirror the change here too. Most upstream
+# changes to the OTLP-proxy schema therefore won't ripple into these tests.
+_BRONZE_TRACES_SCHEMA = StructType(
+    [
+        StructField("name", StringType(), True),
+        StructField("attributes", MapType(StringType(), StringType()), True),
+        StructField("start_time_unix_nano", LongType(), True),
+        StructField("end_time_unix_nano", LongType(), True),
+        StructField(
+            "events",
+            ArrayType(
+                StructType([StructField("attributes", MapType(StringType(), StringType()), True)])
+            ),
+            True,
+        ),
+        StructField(
+            "resource",
+            StructType([StructField("attributes", MapType(StringType(), StringType()), True)]),
+            True,
+        ),
+    ]
+)
+
+_BRONZE_LOGS_SCHEMA = StructType(
+    [
+        StructField("body", StringType(), True),
+        StructField("attributes", MapType(StringType(), StringType()), True),
+    ]
+)
+
+_BRONZE_METRICS_SCHEMA = StructType(
+    [
+        StructField("name", StringType(), True),
+        StructField(
+            "sum",
+            StructType(
+                [
+                    StructField("value", DoubleType(), True),
+                    StructField("attributes", MapType(StringType(), StringType()), True),
+                ]
+            ),
+            True,
+        ),
+    ]
+)
+
+
+_BRONZE_TRACES_DEFAULTS: dict = {
+    "name": "",
+    "attributes": {},
+    "start_time_unix_nano": 0,
+    "end_time_unix_nano": 0,
+    "events": [],
+    "resource": {"attributes": {}},
+}
+
+_BRONZE_LOGS_DEFAULTS: dict = {
+    "body": "",
+    "attributes": {},
+}
+
+_BRONZE_METRICS_DEFAULTS: dict = {
+    "name": "",
+    "sum": {"value": 0.0, "attributes": {}},
+}
+
+
+@pytest.fixture
+def make_bronze_tables(spark: SparkSession, bronze_schema: str):
+    """Factory that materializes `claude_otel_traces`, `claude_otel_logs`, and
+    `claude_otel_metrics` Delta tables in `bronze_schema` from partial Python
+    dict rows. Missing columns inherit defaults from the constants above.
+
+    The mirror schema is intentionally a subset of `docs/bronze-schema.sql` —
+    only the columns `silver_etl.py` actually reads:
+
+    * `claude_otel_traces`: `name`, `attributes` (MAP), `start_time_unix_nano`,
+      `end_time_unix_nano`, `events` (ARRAY<STRUCT<attributes: MAP>>),
+      `resource` (STRUCT<attributes: MAP>).
+    * `claude_otel_logs`: `body`, `attributes` (MAP).
+    * `claude_otel_metrics`: `name`, `sum` (STRUCT<value: DOUBLE, attributes:
+      MAP>).
+
+    All three tables are always created (with whatever subset of rows the
+    test provides — empty is fine) so silver_etl's `spark.table(...)` reads
+    never miss. Returns a `build(*, traces, logs, metrics)` callable so each
+    test spells out only the bronze fields under test.
+    """
+
+    def build(
+        *,
+        traces: list[dict] | None = None,
+        logs: list[dict] | None = None,
+        metrics: list[dict] | None = None,
+    ) -> None:
+        traces = traces or []
+        logs = logs or []
+        metrics = metrics or []
+
+        traces_rows = [
+            _row_in_schema_order(t, _BRONZE_TRACES_DEFAULTS, _BRONZE_TRACES_SCHEMA) for t in traces
+        ]
+        logs_rows = [
+            _row_in_schema_order(log, _BRONZE_LOGS_DEFAULTS, _BRONZE_LOGS_SCHEMA) for log in logs
+        ]
+        metrics_rows = [
+            _row_in_schema_order(m, _BRONZE_METRICS_DEFAULTS, _BRONZE_METRICS_SCHEMA)
+            for m in metrics
+        ]
+
+        traces_df = spark.createDataFrame(traces_rows, schema=_BRONZE_TRACES_SCHEMA)
+        logs_df = spark.createDataFrame(logs_rows, schema=_BRONZE_LOGS_SCHEMA)
+        metrics_df = spark.createDataFrame(metrics_rows, schema=_BRONZE_METRICS_SCHEMA)
+
+        for table, df in [
+            ("claude_otel_traces", traces_df),
+            ("claude_otel_logs", logs_df),
+            ("claude_otel_metrics", metrics_df),
+        ]:
+            spark.sql(f"DROP TABLE IF EXISTS {bronze_schema}.{table}")
+            df.write.format("delta").saveAsTable(f"{bronze_schema}.{table}")
 
     return build
 
