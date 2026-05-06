@@ -9,6 +9,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType
 
+from claude_otel_session_scorer._spark import create_spark_session
+
 logger = logging.getLogger(__name__)
 
 _REPLAY_CHAR_BUDGET = 30_000
@@ -26,18 +28,6 @@ FLAT_SCHEMA = (
     "error_handling INT, cost_efficiency INT, overall_score INT, "
     "summary STRING, recommendations STRING"
 )
-
-
-def create_spark_session() -> SparkSession:
-    """Return (or reuse) the active SparkSession for this job."""
-    if os.environ.get("DATABRICKS_RUNTIME_VERSION") is None:
-        try:
-            from databricks.connect import DatabricksSession
-
-            return DatabricksSession.builder.serverless().getOrCreate()
-        except ImportError:
-            return SparkSession.builder.getOrCreate()
-    return SparkSession.builder.getOrCreate()
 
 
 def format_event_line(row) -> str:

@@ -15,6 +15,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
+from claude_otel_session_scorer._spark import create_spark_session
+
 logger = logging.getLogger(__name__)
 
 # Window for "USER_PROMPT after TOOL_RESULT counts as a correction."
@@ -39,18 +41,6 @@ def compute_friction_score(
         0.4 * (reject_rate or 0.0) + 0.3 * (abort_rate or 0.0) + 0.3 * (correction_intensity or 0.0)
     )
     return min(100.0, max(0.0, raw))
-
-
-def create_spark_session() -> SparkSession:
-    """Return (or reuse) the active SparkSession for this job."""
-    if os.environ.get("DATABRICKS_RUNTIME_VERSION") is None:
-        try:
-            from databricks.connect import DatabricksSession
-
-            return DatabricksSession.builder.serverless().getOrCreate()
-        except ImportError:
-            return SparkSession.builder.getOrCreate()
-    return SparkSession.builder.getOrCreate()
 
 
 def run_human_signals(
