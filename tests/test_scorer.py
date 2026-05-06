@@ -10,26 +10,7 @@ from claude_otel_session_scorer.scorer import (
     run_scoring,
     split_into_interactions,
 )
-
-
-def _make_mock_spark(table_exists=False, new_session_count=1):
-    spark = MagicMock()
-    spark.catalog.tableExists.return_value = table_exists
-    df = MagicMock()
-    df.select.return_value = df
-    df.join.return_value = df
-    df.filter.return_value = df
-    df.groupBy.return_value = df
-    df.agg.return_value = df
-    df.withColumn.return_value = df
-    df.orderBy.return_value = df
-    df.count.return_value = new_session_count
-    spark.table.return_value = df
-    return spark
-
-
-def _sql_calls(spark):
-    return [c.args[0].strip() for c in spark.sql.call_args_list]
+from tests.conftest import _make_mock_spark, _sql_calls
 
 
 class _Row:

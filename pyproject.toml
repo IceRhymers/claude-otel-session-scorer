@@ -8,11 +8,26 @@ packages = [{include = "claude_otel_session_scorer"}]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
-databricks-connect = "==18.0.5"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0.0"
 ruff = ">=0.4"
+
+# Default-installed group: real pyspark + delta-spark for in-process behavioral
+# tests. Conflicts with `databricks-connect` (both install the `pyspark`
+# namespace) so the two groups are mutually exclusive.
+[tool.poetry.group.test.dependencies]
+pyspark = "==3.5.8"
+delta-spark = "==3.3.2"
+
+# Opt-in group for local-against-Databricks-workspace development. Install with
+# `poetry install --without test --with databricks-connect`. Mutually exclusive
+# with the `test` group (see note above).
+[tool.poetry.group.databricks-connect]
+optional = true
+
+[tool.poetry.group.databricks-connect.dependencies]
+databricks-connect = "==18.0.5"
 
 [build-system]
 requires = ["poetry-core"]
